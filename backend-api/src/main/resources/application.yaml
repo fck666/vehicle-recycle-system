@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: backend-api
+  profiles:
+    active: dev,local
+  # 通用默认配置
+  jpa:
+    open-in-view: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  sql:
+    init:
+      mode: always # 始终尝试初始化，具体脚本由 profile 决定是否覆盖

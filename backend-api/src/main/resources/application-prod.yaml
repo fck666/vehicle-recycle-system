@@ -1,0 +1,26 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    # 生产环境从环境变量读取，避免硬编码
+    url: ${DB_URL:jdbc:mysql://localhost:3306/scrap_system?useSSL=true&serverTimezone=Asia/Shanghai&characterEncoding=utf-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 30000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: validate # 生产环境仅验证表结构，禁止自动修改
+    show-sql: false      # 生产环境关闭 SQL 打印
+    properties:
+      hibernate:
+        format_sql: false
+  sql:
+    init:
+      mode: never # 生产环境禁止自动初始化数据

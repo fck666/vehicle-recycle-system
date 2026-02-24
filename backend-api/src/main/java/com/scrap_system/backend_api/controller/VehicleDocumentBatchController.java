@@ -1,0 +1,98 @@
+package com.scrap_system.backend_api.controller;
+
+import com.scrap_system.backend_api.dto.BatchUpsertResult;
+import com.scrap_system.backend_api.dto.VehicleDocumentBatchUpsertItem;
+import com.scrap_system.backend_api.dto.VehicleDocumentBatchUpsertRequest;
+import com.scrap_system.backend_api.model.VehicleDocument;
+import com.scrap_system.backend_api.model.VehicleModel;
+import com.scrap_system.backend_api.repository.VehicleDocumentRepository;
+import com.scrap_system.backend_api.repository.VehicleModelRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Optional;
+
+@RestController
+@RequestMapping("/api/vehicle-documents")
+@RequiredArgsConstructor
+public class VehicleDocumentBatchController {
+
+    private final VehicleModelRepository vehicleModelRepository;
+    private final VehicleDocumentRepository vehicleDocumentRepository;
+
+    @PostMapping("/batch")
+    public ResponseEntity<BatchUpsertResult> batchUpsert(@RequestBody VehicleDocumentBatchUpsertRequest request) {
+        if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
+            return ResponseEntity.ok(new BatchUpsertResult(0, 0, 0));
+        }
+
+        int inserted = 0;
+        int updated = 0;
+        int skipped = 0;
+
+        for (VehicleDocumentBatchUpsertItem item : request.getItems()) {
+            if (item == null || isBlank(item.getDocUrl())) {
+                skipped++;
+                continue;
+            }
+
+            String productId = normalize(item.getProductId());
+            String productNo = normalize(item.getProductNo());
+            if (isBlank(productId) && isBlank(productNo)) {
+                skipped++;
+                continue;
+            }
+
+            Optional<VehicleModel> vehicleOpt = !isBlank(productId)
+                    ? vehicleModelRepository.findByProductId(productId)
+                    : vehicleModelRepository.findByProductNo(productNo);
+            if (vehicleOpt.isEmpty()) {
+                skipped++;
+                continue;
+            }
+
+            VehicleModel vehicle = vehicleOpt.get();
+            VehicleDocument doc = resolveExisting(vehicle.getId(), item).orElseGet(VehicleDocument::new);
+            boolean isInsert = doc.getId() == null;
+
+            doc.setVehicle(vehicle);
+            doc.setDocType(item.getDocType());
+            doc.setDocName(item.getDocName());
+            doc.setDocUrl(item.getDocUrl());
+            doc.setSha256(item.getSha256());
+            doc.setSourceUrl(item.getSourceUrl());
+            doc.setFetchedAt(item.getFetchedAt());
+
+            VehicleDocument saved = vehicleDocumentRepository.save(doc);
+            if (isInsert) {
+                vehicle.getDocuments().add(saved);
+                vehicleModelRepository.save(vehicle);
+                inserted++;
+            } else {
+                updated++;
+            }
+        }
+
+        return ResponseEntity.ok(new BatchUpsertResult(inserted, updated, skipped));
+    }
+
+    private Optional<VehicleDocument> resolveExisting(Long vehicleId, VehicleDocumentBatchUpsertItem item) {
+        if (vehicleId == null || item == null) return Optional.empty();
+        if (!isBlank(item.getSha256())) {
+            return vehicleDocumentRepository.findFirstByVehicle_IdAndSha256(vehicleId, item.getSha256().trim());
+        }
+        if (!isBlank(item.getDocUrl())) {
+            return vehicleDocumentRepository.findFirstByVehicle_IdAndDocUrl(vehicleId, item.getDocUrl().trim());
+        }
+        return Optional.empty();
+    }
+
+    private static String normalize(String s) {
+        return s == null ? null : s.trim();
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+}

@@ -1,0 +1,19 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:mysql://localhost:3306/scrap_system?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8
+    username: root
+    password: # 默认密码为空，真实密码请配置在 application-local.yaml 中
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update # 开发环境自动更新表结构
+    show-sql: true     # 开发环境打印 SQL
+    properties:
+      hibernate:
+        format_sql: true
+  sql:
+    init:
+      schema-locations: classpath:schema.sql # 开发环境使用本地 schema

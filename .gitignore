@@ -1,0 +1,44 @@
+# Standard .gitignore
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Maven
+target/
+*.log
+!src/main/resources/*.log
+dependency-reduced-pom.xml
+
+# Spring Boot
+**/src/main/resources/application-local.yaml
+**/src/main/resources/application-secret.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
+.env
+*.egg-info/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Runtime uploads
+**/uploads/
+
+# OS
+Thumbs.db
