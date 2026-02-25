@@ -13,7 +13,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-运行（默认写入本地后端 `http://localhost:8080`）：
+运行（默认写入本地后端 `http://localhost:8090`；写入接口需要 JWT Token）：
 
 ```bash
 python -m price_crawler.cli run
@@ -28,6 +28,7 @@ python -m price_crawler.cli run --dry-run
 指定后端地址与鉴权：
 
 ```bash
-BACKEND_BASE_URL=http://localhost:8080 BACKEND_TOKEN=xxx python -m price_crawler.cli run
-```
+BACKEND_BASE_URL=http://localhost:8090 BACKEND_TOKEN=xxx python -m price_crawler.cli run
 
+提示：后端开启了“按端类型单点登录”，建议用 `clientType=SERVICE` 登录生成 token 供脚本使用，避免挤掉 PC 端登录。
+```

@@ -3,10 +3,13 @@ package com.scrap_system.backend_api.controller;
 import com.scrap_system.backend_api.dto.BatchUpsertResult;
 import com.scrap_system.backend_api.dto.MaterialPriceBatchUpsertRequest;
 import com.scrap_system.backend_api.dto.MaterialPriceUpsertRequest;
+import com.scrap_system.backend_api.model.JobRun;
 import com.scrap_system.backend_api.model.MaterialPrice;
 import com.scrap_system.backend_api.repository.MaterialPriceRepository;
+import com.scrap_system.backend_api.service.JobRunService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,6 +21,7 @@ import java.util.Optional;
 public class MaterialPriceController {
 
     private final MaterialPriceRepository materialPriceRepository;
+    private final JobRunService jobRunService;
 
     @GetMapping
     public List<MaterialPrice> list() {
@@ -54,8 +58,16 @@ public class MaterialPriceController {
     }
 
     @PostMapping("/batch")
-    public ResponseEntity<BatchUpsertResult> batchUpsert(@RequestBody MaterialPriceBatchUpsertRequest request) {
+    public ResponseEntity<BatchUpsertResult> batchUpsert(
+            @RequestBody MaterialPriceBatchUpsertRequest request,
+            @RequestHeader(value = "X-Run-Id", required = false) String runId,
+            Authentication authentication
+    ) {
+        Long userId = authentication != null && authentication.getPrincipal() instanceof Long ? (Long) authentication.getPrincipal() : null;
+        JobRun jr = jobRunService.start("PRICE_BATCH_UPSERT", runId, userId, userId == null ? null : ("user:" + userId),
+                request == null || request.getItems() == null ? null : ("{\"count\":" + request.getItems().size() + "}"));
         if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
+            jobRunService.success(jr, 0, 0, 0, "empty", null);
             return ResponseEntity.ok(new BatchUpsertResult(0, 0, 0));
         }
 
@@ -63,29 +75,35 @@ public class MaterialPriceController {
         int updated = 0;
         int skipped = 0;
 
-        for (MaterialPriceUpsertRequest item : request.getItems()) {
-            if (item == null || isBlank(item.getType()) || item.getPricePerKg() == null) {
-                skipped++;
-                continue;
+        try {
+            for (MaterialPriceUpsertRequest item : request.getItems()) {
+                if (item == null || isBlank(item.getType()) || item.getPricePerKg() == null) {
+                    skipped++;
+                    continue;
+                }
+
+                String type = item.getType().trim();
+                Optional<MaterialPrice> existing = materialPriceRepository.findByType(type);
+                MaterialPrice p = existing.orElseGet(MaterialPrice::new);
+                boolean isInsert = existing.isEmpty();
+                p.setType(type);
+                p.setPricePerKg(item.getPricePerKg());
+                if (!isBlank(item.getCurrency())) p.setCurrency(item.getCurrency().trim());
+                if (!isBlank(item.getUnit())) p.setUnit(item.getUnit().trim());
+                if (item.getEffectiveDate() != null) p.setEffectiveDate(item.getEffectiveDate());
+                if (item.getFetchedAt() != null) p.setFetchedAt(item.getFetchedAt());
+                if (!isBlank(item.getSourceName())) p.setSourceName(item.getSourceName().trim());
+                if (!isBlank(item.getSourceUrl())) p.setSourceUrl(item.getSourceUrl().trim());
+                if (!isBlank(item.getRawPayload())) p.setRawPayload(item.getRawPayload());
+                materialPriceRepository.save(p);
+
+                if (isInsert) inserted++;
+                else updated++;
             }
-
-            String type = item.getType().trim();
-            Optional<MaterialPrice> existing = materialPriceRepository.findByType(type);
-            MaterialPrice p = existing.orElseGet(MaterialPrice::new);
-            boolean isInsert = existing.isEmpty();
-            p.setType(type);
-            p.setPricePerKg(item.getPricePerKg());
-            if (!isBlank(item.getCurrency())) p.setCurrency(item.getCurrency().trim());
-            if (!isBlank(item.getUnit())) p.setUnit(item.getUnit().trim());
-            if (item.getEffectiveDate() != null) p.setEffectiveDate(item.getEffectiveDate());
-            if (item.getFetchedAt() != null) p.setFetchedAt(item.getFetchedAt());
-            if (!isBlank(item.getSourceName())) p.setSourceName(item.getSourceName().trim());
-            if (!isBlank(item.getSourceUrl())) p.setSourceUrl(item.getSourceUrl().trim());
-            if (!isBlank(item.getRawPayload())) p.setRawPayload(item.getRawPayload());
-            materialPriceRepository.save(p);
-
-            if (isInsert) inserted++;
-            else updated++;
+            jobRunService.success(jr, inserted, updated, skipped, null, null);
+        } catch (Exception e) {
+            jobRunService.failed(jr, e.getMessage(), null);
+            throw e;
         }
 
         return ResponseEntity.ok(new BatchUpsertResult(inserted, updated, skipped));

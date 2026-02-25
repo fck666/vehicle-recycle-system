@@ -15,6 +15,7 @@ def batch_upsert(
     base_url: str,
     token: str | None,
     items: list[MaterialPriceItem],
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     url = base_url.rstrip("/") + "/api/material-prices/batch"
 
@@ -39,6 +40,8 @@ def batch_upsert(
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if run_id:
+        headers["X-Run-Id"] = run_id
     if headers:
         session.headers.update(headers)
 

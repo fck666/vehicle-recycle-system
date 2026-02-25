@@ -17,3 +17,12 @@ spring:
   sql:
     init:
       schema-locations: classpath:schema.sql # 开发环境使用本地 schema
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-secret-change-me-please-32-bytes-minimum}
+    wx:
+      dev-accept-openid: true
+    phone:
+      dev-accept-phone: true

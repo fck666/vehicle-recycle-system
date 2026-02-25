@@ -13,3 +13,12 @@ spring:
   sql:
     init:
       mode: always # 始终尝试初始化，具体脚本由 profile 决定是否覆盖
+
+server:
+  port: 8090
+
+app:
+  material-price-fetch:
+    enabled: true
+    cron: "0 10 2 * * *"
+    zone: "Asia/Shanghai"

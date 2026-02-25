@@ -38,7 +38,7 @@ def main() -> None:
 
     u = sub.add_parser("upsert")
     u.add_argument("--spec-jsonl", default="data/specs.jsonl")
-    u.add_argument("--backend", default=os.getenv("BACKEND_BASE_URL", "http://localhost:8080"))
+    u.add_argument("--backend", default=os.getenv("BACKEND_BASE_URL", "http://localhost:8090"))
     u.add_argument("--token", default=os.getenv("BACKEND_TOKEN", ""))
 
     args = parser.parse_args()
@@ -161,8 +161,8 @@ def run_upsert(args: argparse.Namespace) -> None:
     if token:
         session.headers.update({"Authorization": f"Bearer {token}"})
 
-    spec_result = upsert_vehicle_specs(session, backend, spec_items)
-    doc_result = upsert_vehicle_documents(session, backend, doc_items)
+    spec_result = upsert_vehicle_specs(session, backend, spec_items, run_id=run_id)
+    doc_result = upsert_vehicle_documents(session, backend, doc_items, run_id=run_id)
 
     log("miit.upsert.done", run_id=run_id, spec_result=spec_result, doc_result=doc_result)
     print(json.dumps({"spec": spec_result, "documents": doc_result, "run_id": run_id}, ensure_ascii=False))
@@ -170,4 +170,3 @@ def run_upsert(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     main()
-

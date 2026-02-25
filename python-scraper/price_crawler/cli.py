@@ -18,7 +18,7 @@ def main() -> None:
     run = sub.add_parser("run")
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--only", default="", help="comma separated: steel,aluminum,copper,battery,plastic,rubber")
-    run.add_argument("--backend", default=getenv("BACKEND_BASE_URL", "http://localhost:8080"))
+    run.add_argument("--backend", default=getenv("BACKEND_BASE_URL", "http://localhost:8090"))
 
     args = parser.parse_args()
 
@@ -61,7 +61,7 @@ def run_once(args: argparse.Namespace) -> None:
         print(json.dumps({"run_id": run_id, "items": [i.material_type for i in items]}, ensure_ascii=False))
         return
 
-    result = batch_upsert(session, cfg, args.backend, token, items)
+    result = batch_upsert(session, cfg, args.backend, token, items, run_id=run_id)
     log("price_crawler.written", run_id=run_id, result=result)
 
 

@@ -3,10 +3,13 @@ package com.scrap_system.backend_api.controller;
 import com.scrap_system.backend_api.dto.BatchUpsertResult;
 import com.scrap_system.backend_api.dto.VehicleSpecBatchUpsertRequest;
 import com.scrap_system.backend_api.dto.VehicleSpecUpsertItem;
+import com.scrap_system.backend_api.model.JobRun;
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
+import com.scrap_system.backend_api.service.JobRunService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -19,50 +22,65 @@ import java.util.Optional;
 public class VehicleSpecController {
 
     private final VehicleModelRepository vehicleModelRepository;
+    private final JobRunService jobRunService;
 
     @PostMapping("/batch")
-    public ResponseEntity<BatchUpsertResult> batchUpsert(@RequestBody VehicleSpecBatchUpsertRequest request) {
-        if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
-            return ResponseEntity.ok(new BatchUpsertResult(0, 0, 0));
+    public ResponseEntity<BatchUpsertResult> batchUpsert(
+            @RequestBody VehicleSpecBatchUpsertRequest request,
+            @RequestHeader(value = "X-Run-Id", required = false) String runId,
+            Authentication authentication
+    ) {
+        Long userId = authentication != null && authentication.getPrincipal() instanceof Long ? (Long) authentication.getPrincipal() : null;
+        JobRun jr = jobRunService.start("MIIT_VEHICLE_SPECS_UPSERT", runId, userId, userId == null ? null : ("user:" + userId),
+                request == null || request.getItems() == null ? null : ("{\"count\":" + request.getItems().size() + "}"));
+        try {
+            if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
+                jobRunService.success(jr, 0, 0, 0, "empty", null);
+                return ResponseEntity.ok(new BatchUpsertResult(0, 0, 0));
+            }
+
+            int inserted = 0;
+            int updated = 0;
+            int skipped = 0;
+
+            for (VehicleSpecUpsertItem item : request.getItems()) {
+                if (item == null) {
+                    skipped++;
+                    continue;
+                }
+
+                String productId = normalize(item.getProductId());
+                String productNo = normalize(item.getProductNo());
+                if (isBlank(productId) && isBlank(productNo)) {
+                    skipped++;
+                    continue;
+                }
+
+                Optional<VehicleModel> existing = !isBlank(productId)
+                        ? vehicleModelRepository.findByProductId(productId)
+                        : vehicleModelRepository.findByProductNo(productNo);
+
+                boolean isInsert = existing.isEmpty();
+                VehicleModel model = existing.orElseGet(VehicleModel::new);
+
+                applyDefaults(model, item, productId, productNo);
+                applyNonNull(model, item);
+
+                vehicleModelRepository.save(model);
+
+                if (isInsert) {
+                    inserted++;
+                } else {
+                    updated++;
+                }
+            }
+
+            jobRunService.success(jr, inserted, updated, skipped, null, null);
+            return ResponseEntity.ok(new BatchUpsertResult(inserted, updated, skipped));
+        } catch (Exception e) {
+            jobRunService.failed(jr, e.getMessage(), null);
+            throw e;
         }
-
-        int inserted = 0;
-        int updated = 0;
-        int skipped = 0;
-
-        for (VehicleSpecUpsertItem item : request.getItems()) {
-            if (item == null) {
-                skipped++;
-                continue;
-            }
-
-            String productId = normalize(item.getProductId());
-            String productNo = normalize(item.getProductNo());
-            if (isBlank(productId) && isBlank(productNo)) {
-                skipped++;
-                continue;
-            }
-
-            Optional<VehicleModel> existing = !isBlank(productId)
-                    ? vehicleModelRepository.findByProductId(productId)
-                    : vehicleModelRepository.findByProductNo(productNo);
-
-            boolean isInsert = existing.isEmpty();
-            VehicleModel model = existing.orElseGet(VehicleModel::new);
-
-            applyDefaults(model, item, productId, productNo);
-            applyNonNull(model, item);
-
-            vehicleModelRepository.save(model);
-
-            if (isInsert) {
-                inserted++;
-            } else {
-                updated++;
-            }
-        }
-
-        return ResponseEntity.ok(new BatchUpsertResult(inserted, updated, skipped));
     }
 
     private void applyDefaults(VehicleModel target, VehicleSpecUpsertItem item, String productId, String productNo) {
@@ -185,4 +203,3 @@ public class VehicleSpecController {
         return null;
     }
 }
-

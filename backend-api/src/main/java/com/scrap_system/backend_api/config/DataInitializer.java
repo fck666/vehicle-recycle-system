@@ -2,27 +2,40 @@ package com.scrap_system.backend_api.config;
 
 import com.scrap_system.backend_api.model.MaterialPrice;
 import com.scrap_system.backend_api.model.MaterialTemplate;
+import com.scrap_system.backend_api.model.Role;
+import com.scrap_system.backend_api.model.UserAccount;
+import com.scrap_system.backend_api.model.UserRole;
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.MaterialPriceRepository;
 import com.scrap_system.backend_api.repository.MaterialTemplateRepository;
+import com.scrap_system.backend_api.repository.RoleRepository;
+import com.scrap_system.backend_api.repository.UserAccountRepository;
+import com.scrap_system.backend_api.repository.UserRoleRepository;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Component
-@Profile("!test")
+@Profile({"dev", "local"})
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
     private final VehicleModelRepository vehicleModelRepository;
     private final MaterialTemplateRepository materialTemplateRepository;
     private final MaterialPriceRepository materialPriceRepository;
+    private final RoleRepository roleRepository;
+    private final UserAccountRepository userAccountRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     public void run(String... args) throws Exception {
+        initAuth();
         if (vehicleModelRepository.count() == 0) {
             initVehicles();
         }
@@ -31,6 +44,47 @@ public class DataInitializer implements CommandLineRunner {
         }
         if (materialPriceRepository.count() == 0) {
             initPrices();
+        }
+    }
+
+    private void initAuth() {
+        ensureRoles(List.of("ADMIN", "OPERATOR", "USER", "SERVICE"));
+        ensureAdminUser();
+    }
+
+    private void ensureRoles(List<String> codes) {
+        for (String code : codes) {
+            roleRepository.findByCode(code).orElseGet(() -> {
+                Role r = new Role();
+                r.setCode(code);
+                return roleRepository.save(r);
+            });
+        }
+    }
+
+    private void ensureAdminUser() {
+        String rawUsername = System.getenv().getOrDefault("ADMIN_USERNAME", "fcc");
+        final String username = rawUsername == null || rawUsername.trim().isEmpty() ? "fcc" : rawUsername.trim();
+        final String pw = System.getenv().getOrDefault("ADMIN_PASSWORD", "12345");
+
+        UserAccount admin = userAccountRepository.findByUsername(username).orElseGet(() -> {
+            UserAccount u = new UserAccount();
+            u.setUsername(username);
+            u.setStatus("ACTIVE");
+            u.setPasswordHash(passwordEncoder.encode(pw));
+            return userAccountRepository.save(u);
+        });
+
+        Long adminRoleId = roleRepository.findByCode("ADMIN").map(Role::getId).orElse(null);
+        if (adminRoleId == null) {
+            return;
+        }
+        boolean has = userRoleRepository.findByUserId(admin.getId()).stream().anyMatch(ur -> ur.getRoleId().equals(adminRoleId));
+        if (!has) {
+            UserRole ur = new UserRole();
+            ur.setUserId(admin.getId());
+            ur.setRoleId(adminRoleId);
+            userRoleRepository.save(ur);
         }
     }
 

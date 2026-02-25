@@ -12,6 +12,7 @@
 ## 仓库结构
 
 - 后端 API（Spring Boot）：[backend-api](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api)
+- 管理后台（Vue）：[admin-web](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/admin-web)
 - 材料价格爬虫（生意社）：[python-scraper](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/python-scraper)
 - 工信部车型参数 PDF 采集/解析/入库：[python-miit-vehicle-crawler](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/python-miit-vehicle-crawler)
 - 需求文档：[docs](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/docs)
@@ -43,11 +44,36 @@ cd backend-api
 ./mvnw spring-boot:run
 ```
 
-默认端口：`http://localhost:8080`
+默认端口：`http://localhost:8090`
+
+默认会初始化一个管理账号（非 test 环境）：
+- 用户名：`fcc`（可通过环境变量 `ADMIN_USERNAME` 覆盖）
+- 密码：`12345`（开发/本地默认；生产环境请通过环境变量 `ADMIN_PASSWORD` 显式设置）
+
+JWT 密钥：
+- 开发环境默认从 `JWT_SECRET` 读取（未设置会使用开发用默认值）
+- 生产环境必须设置 `JWT_SECRET`
 
 开发环境会：
 - 自动建表/更新表结构（`ddl-auto=update`）
 - 初始化基础数据（非 test 环境）：车辆样例、材料模板、材料价格（见 [DataInitializer.java](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/java/com/scrap_system/backend_api/config/DataInitializer.java)）
+
+### 2.1) 启动管理后台（Vue）
+
+要求：后端先启动在 `http://localhost:8090`。
+
+```bash
+cd admin-web
+npm install
+npm run dev
+```
+
+本地访问：`http://localhost:5174/`（开发态已配置 `/api` 代理到后端）。
+
+管理后台能力：
+- 车型管理、材料价格、估值模板维护
+- 抓取任务记录查看（材料抓取/车型入库）
+- 用户管理（仅 ADMIN 可见/可操作）
 
 ### 3) 跑材料价格爬虫（生意社）
 
@@ -60,13 +86,17 @@ pip install -r requirements.txt
 python -m price_crawler.cli run
 ```
 
-- 默认写入后端：`http://localhost:8080/api/material-prices/batch`
+- 默认写入后端：`http://localhost:8090/api/material-prices/batch`
 - 支持 `--dry-run` 仅打印不写入
 - 可通过环境变量覆盖：
-  - `BACKEND_BASE_URL`（默认 http://localhost:8080）
-  - `BACKEND_TOKEN`（如后端未来启用 Bearer Token）
+  - `BACKEND_BASE_URL`（默认 http://localhost:8090）
+  - `BACKEND_TOKEN`（必填：后端写入接口已开启 JWT 鉴权；建议用 `clientType=SERVICE` 生成 token，避免影响 PC 登录）
 
 材料与数据源映射见：[ppi_reference.py](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/python-scraper/price_crawler/sources/ppi_reference.py)
+
+后端也内置了“每日定时抓取生意社材料价格并入库”的定时任务（用于部署环境免装 Python）：
+- 配置项：`app.material-price-fetch.enabled/cron/zone`（见 [application.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application.yaml)）
+- 默认 cron：每天 02:10（Asia/Shanghai）
 
 ### 4) 跑工信部车型参数 PDF（人机协同）
 
@@ -91,7 +121,7 @@ python -m playwright install chromium
 ```bash
 python -m miit_vehicle_crawler.cli download --urls urls.txt
 python -m miit_vehicle_crawler.cli parse
-python -m miit_vehicle_crawler.cli upsert --backend http://localhost:8080
+python -m miit_vehicle_crawler.cli upsert --backend http://localhost:8090
 ```
 
 2）人机协同筛选（会打开浏览器，你手动筛选/搜索后回车导出候选链接）

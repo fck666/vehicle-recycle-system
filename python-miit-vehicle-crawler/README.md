@@ -23,7 +23,9 @@ python -m playwright install chromium
 ```bash
 python -m miit_vehicle_crawler.cli download --urls urls.txt
 python -m miit_vehicle_crawler.cli parse --pdf-dir data/pdfs
-python -m miit_vehicle_crawler.cli upsert --spec-jsonl data/specs.jsonl --backend http://localhost:8080
+python -m miit_vehicle_crawler.cli upsert --spec-jsonl data/specs.jsonl --backend http://localhost:8090 --token xxx
+
+提示：后端开启了“按端类型单点登录”，建议用 `clientType=SERVICE` 登录生成 token 供脚本使用，避免挤掉 PC 端登录。
 ```
 
 ### 方式 2：人机协同（打开浏览器自行筛选，再导出候选）
@@ -31,4 +33,3 @@ python -m miit_vehicle_crawler.cli upsert --spec-jsonl data/specs.jsonl --backen
 ```bash
 python -m miit_vehicle_crawler.cli discover --output data/candidates.jsonl
 ```
-

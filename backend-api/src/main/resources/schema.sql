@@ -104,3 +104,66 @@ CREATE TABLE IF NOT EXISTS vehicle_document (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_vehicle_doc_vehicle_id (vehicle_id)
 );
+
+CREATE TABLE IF NOT EXISTS user_account (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(64) UNIQUE,
+  password_hash VARCHAR(255),
+  wx_openid VARCHAR(64) UNIQUE,
+  wx_unionid VARCHAR(64) UNIQUE,
+  phone VARCHAR(32) UNIQUE,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_user_username (username),
+  INDEX idx_user_wx_openid (wx_openid),
+  INDEX idx_user_wx_unionid (wx_unionid),
+  INDEX idx_user_phone (phone)
+);
+
+CREATE TABLE IF NOT EXISTS role (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(32) NOT NULL UNIQUE,
+  INDEX idx_role_code (code)
+);
+
+CREATE TABLE IF NOT EXISTS user_role (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  role_id BIGINT NOT NULL,
+  UNIQUE KEY uk_user_role (user_id, role_id),
+  INDEX idx_user_role_user_id (user_id),
+  INDEX idx_user_role_role_id (role_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_session (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  client_type VARCHAR(16) NOT NULL,
+  session_id VARCHAR(64) NOT NULL UNIQUE,
+  token_id VARCHAR(64) NOT NULL,
+  issued_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL,
+  revoked_at TIMESTAMP NULL,
+  UNIQUE KEY uk_user_session_user_client (user_id, client_type),
+  INDEX idx_user_session_user_client (user_id, client_type),
+  INDEX idx_user_session_session_id (session_id)
+);
+
+CREATE TABLE IF NOT EXISTS job_run (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  run_id VARCHAR(64) NOT NULL UNIQUE,
+  job_type VARCHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP NULL,
+  actor_user_id BIGINT NULL,
+  actor_name VARCHAR(64),
+  inserted_count INT,
+  updated_count INT,
+  skipped_count INT,
+  message VARCHAR(512),
+  details_json LONGTEXT,
+  INDEX idx_job_run_type_time (job_type, started_at),
+  INDEX idx_job_run_run_id (run_id)
+);

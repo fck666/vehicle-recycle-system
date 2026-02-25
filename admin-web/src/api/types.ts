@@ -1,0 +1,56 @@
+export interface Page<T> {
+  content: T[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+}
+
+export interface VehicleModel {
+  id: number
+  brand: string
+  model: string
+  modelYear: number
+  fuelType: string
+  vehicleType: string
+  curbWeight: number
+  batteryKwh?: number | null
+  productId?: string | null
+  productNo?: string | null
+  createdAt?: string | null
+}
+
+export interface VehicleUpsertRequest {
+  brand?: string
+  model?: string
+  modelYear?: number
+  fuelType?: string
+  vehicleType?: string
+  curbWeight?: number
+  batteryKwh?: number | null
+  productId?: string | null
+  productNo?: string | null
+}
+
+export interface MaterialPrice {
+  id: number
+  type: string
+  pricePerKg: number
+  currency?: string | null
+  unit?: string | null
+  effectiveDate?: string | null
+  fetchedAt?: string | null
+  sourceName?: string | null
+  sourceUrl?: string | null
+  updateTime?: string | null
+}
+
+export interface MaterialTemplate {
+  id: number
+  vehicleType: string
+  steelRatio: number
+  aluminumRatio: number
+  copperRatio: number
+  recoveryRatio: number
+  createdAt?: string | null
+}
