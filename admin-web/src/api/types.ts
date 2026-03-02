@@ -18,6 +18,27 @@ export interface VehicleModel {
   productId?: string | null
   productNo?: string | null
   createdAt?: string | null
+  images?: VehicleImage[]
+  documents?: VehicleDocument[]
+}
+
+export interface VehicleImage {
+  id: number
+  imageUrl: string
+  imageName?: string | null
+  sortOrder?: number | null
+  createdAt?: string | null
+}
+
+export interface VehicleDocument {
+  id: number
+  docType?: string | null
+  docName?: string | null
+  docUrl: string
+  sha256?: string | null
+  sourceUrl?: string | null
+  fetchedAt?: string | null
+  createdAt?: string | null
 }
 
 export interface VehicleUpsertRequest {

@@ -94,7 +94,7 @@ public class MaterialPriceFetchService {
     }
 
     private boolean upsert(Source source, Fetched fetched) {
-        Optional<MaterialPrice> existing = materialPriceRepository.findByType(source.type());
+        Optional<MaterialPrice> existing = materialPriceRepository.findByTypeAndEffectiveDate(source.type(), fetched.effectiveDate());
         MaterialPrice p = existing.orElseGet(MaterialPrice::new);
 
         p.setType(source.type());

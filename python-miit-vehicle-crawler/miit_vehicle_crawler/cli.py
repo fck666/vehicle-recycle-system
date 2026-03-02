@@ -9,12 +9,14 @@ from datetime import datetime
 import requests
 
 from .backend_api import upsert_vehicle_documents, upsert_vehicle_specs
+from .cp_sync import sync_cp
 from .discover import interactive_discover
 from .download import download_from_candidates, download_from_urls
 from .io_utils import iter_jsonl, read_lines, write_jsonl
 from .logging_utils import log
 from .models import Candidate, PdfArchive
 from .parse import parse_pdf, to_vehicle_spec_item
+from .worker import run_worker
 
 
 def main() -> None:
@@ -41,6 +43,26 @@ def main() -> None:
     u.add_argument("--backend", default=os.getenv("BACKEND_BASE_URL", "http://localhost:8090"))
     u.add_argument("--token", default=os.getenv("BACKEND_TOKEN", ""))
 
+    cs = sub.add_parser("cp-sync")
+    cs.add_argument("--pc-from", type=int, required=True)
+    cs.add_argument("--pc-to", type=int, required=True)
+    cs.add_argument("--qymc")
+    cs.add_argument("--cpsb")
+    cs.add_argument("--cpsb-list", help="comma-separated brands, e.g. 大众牌,奥迪(AUDI)牌")
+    cs.add_argument("--qymc-list", help="comma-separated enterprise names")
+    cs.add_argument("--clxh")
+    cs.add_argument("--clmc")
+    cs.add_argument("--page-size", type=int, default=10)
+    cs.add_argument("--limit", type=int)
+    cs.add_argument("--headless", action="store_true")
+    cs.add_argument("--backend", default=os.getenv("BACKEND_BASE_URL", "http://localhost:8090"))
+    cs.add_argument("--token", default=os.getenv("BACKEND_TOKEN", ""))
+
+    w = sub.add_parser("worker")
+    w.add_argument("--backend", default=os.getenv("BACKEND_BASE_URL", "http://localhost:8090"))
+    w.add_argument("--token", default=os.getenv("BACKEND_TOKEN", ""))
+    w.add_argument("--poll-interval", type=float, default=3.0)
+
     args = parser.parse_args()
 
     if args.cmd == "discover":
@@ -58,6 +80,41 @@ def main() -> None:
 
     if args.cmd == "upsert":
         run_upsert(args)
+        return
+
+    if args.cmd == "cp-sync":
+        run_id = str(uuid.uuid4())
+        token = args.token.strip() if args.token else ""
+        log("miit.cp.sync.start", run_id=run_id, pc_from=args.pc_from, pc_to=args.pc_to)
+        cpsb_list = []
+        if args.cpsb_list:
+            cpsb_list = [x.strip() for x in args.cpsb_list.split(",") if x.strip()]
+        qymc_list = []
+        if args.qymc_list:
+            qymc_list = [x.strip() for x in args.qymc_list.split(",") if x.strip()]
+        limit = int(args.limit) if args.limit else 0
+        result = sync_cp(
+            backend=args.backend,
+            token=token,
+            pc_from=args.pc_from,
+            pc_to=args.pc_to,
+            qymc=args.qymc,
+            qymc_list=qymc_list,
+            cpsb=args.cpsb,
+            cpsb_list=cpsb_list,
+            clxh=args.clxh,
+            clmc=args.clmc,
+            page_size=args.page_size,
+            headful=not bool(args.headless),
+            limit=limit,
+        )
+        log("miit.cp.sync.done", run_id=run_id, result=result)
+        print(json.dumps({"result": result, "run_id": run_id}, ensure_ascii=False))
+        return
+
+    if args.cmd == "worker":
+        token = args.token.strip() if args.token else ""
+        run_worker(args.backend, token, poll_interval_sec=float(args.poll_interval))
         return
 
 

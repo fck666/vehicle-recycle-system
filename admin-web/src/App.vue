@@ -28,6 +28,7 @@ async function logout() {
       <el-menu :default-active="(route.path as string)" @select="onSelect" class="menu">
         <el-menu-item index="/">概览</el-menu-item>
         <el-menu-item index="/vehicles">车型管理</el-menu-item>
+        <el-menu-item v-if="isAdmin" index="/vehicle-mappings">车型关联</el-menu-item>
         <el-menu-item index="/material-prices">材料价格</el-menu-item>
         <el-menu-item index="/material-templates">估值方式</el-menu-item>
         <el-menu-item v-if="isAdmin" index="/users">用户管理</el-menu-item>
@@ -35,6 +36,7 @@ async function logout() {
           <template #title>抓取任务</template>
           <el-menu-item index="/jobs/material-price">材料抓取</el-menu-item>
           <el-menu-item index="/jobs/vehicle">车型抓取</el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/jobs/miit-cp">工信部抓取</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>
@@ -84,5 +86,6 @@ async function logout() {
 }
 .main {
   background: var(--el-bg-color-page);
+  padding: 16px;
 }
 </style>

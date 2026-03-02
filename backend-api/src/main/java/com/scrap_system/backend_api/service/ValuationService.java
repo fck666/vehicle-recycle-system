@@ -139,7 +139,7 @@ public class ValuationService {
     }
 
     private BigDecimal getPrice(String type) {
-        return materialPriceRepository.findByType(type)
+        return materialPriceRepository.findFirstByTypeOrderByEffectiveDateDescFetchedAtDesc(type)
                 .map(MaterialPrice::getPricePerKg)
                 .orElse(BigDecimal.ZERO);
     }

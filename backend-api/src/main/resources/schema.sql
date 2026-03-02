@@ -63,12 +63,14 @@ CREATE TABLE IF NOT EXISTS material_price (
   price_per_kg DECIMAL(10,2) NOT NULL,
   currency VARCHAR(8),
   unit VARCHAR(16),
-  effective_date DATE NULL,
+  effective_date DATE NOT NULL,
   fetched_at TIMESTAMP NULL,
   source_name VARCHAR(64),
   source_url VARCHAR(512),
   raw_payload LONGTEXT,
-  update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_material_price_type_date (type, effective_date),
+  INDEX idx_material_price_type_date (type, effective_date)
 );
 
 CREATE TABLE IF NOT EXISTS valuation_record (
@@ -90,6 +92,59 @@ CREATE TABLE IF NOT EXISTS vehicle_image (
   sort_order INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_vehicle_id (vehicle_id)
+);
+
+CREATE TABLE IF NOT EXISTS external_vehicle_trim (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  source VARCHAR(32) NOT NULL,
+  source_trim_id VARCHAR(64) NOT NULL,
+  brand VARCHAR(64) NOT NULL,
+  series_name VARCHAR(128),
+  market_name VARCHAR(255),
+  model_year INT,
+  energy_type VARCHAR(32),
+  official_price DECIMAL(10,2),
+  battery_kwh DECIMAL(10,2),
+  displacement_ml INT,
+  power_kw DECIMAL(10,2),
+  curb_weight DECIMAL(10,2),
+  cover_url VARCHAR(512),
+  page_url VARCHAR(512),
+  raw_json LONGTEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_ext_trim_source_id (source, source_trim_id),
+  INDEX idx_ext_trim_source_id (source, source_trim_id),
+  INDEX idx_ext_trim_brand_series_year (brand, series_name, model_year)
+);
+
+CREATE TABLE IF NOT EXISTS vehicle_mapping (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  miit_vehicle_id BIGINT NOT NULL,
+  external_trim_id BIGINT,
+  status VARCHAR(16) NOT NULL,
+  score DOUBLE,
+  matched_by VARCHAR(64),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_vehicle_mapping_miit (miit_vehicle_id),
+  INDEX idx_vehicle_mapping_status (status),
+  INDEX idx_vehicle_mapping_ext_id (external_trim_id),
+  FOREIGN KEY (external_trim_id) REFERENCES external_vehicle_trim(id)
+);
+
+CREATE TABLE IF NOT EXISTS vehicle_mapping_candidate (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  miit_vehicle_id BIGINT NOT NULL,
+  external_trim_id BIGINT NOT NULL,
+  score DOUBLE NOT NULL,
+  rank_no INT NOT NULL,
+  matched_by VARCHAR(64),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_vmc_miit_rank (miit_vehicle_id, rank_no),
+  INDEX idx_vmc_miit_rank (miit_vehicle_id, rank_no),
+  INDEX idx_vmc_ext (external_trim_id),
+  FOREIGN KEY (external_trim_id) REFERENCES external_vehicle_trim(id)
 );
 
 CREATE TABLE IF NOT EXISTS vehicle_document (

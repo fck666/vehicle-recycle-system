@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,14 +26,33 @@ public class MaterialPriceController {
 
     @GetMapping
     public List<MaterialPrice> list() {
-        return materialPriceRepository.findAll();
+        return materialPriceRepository.findLatestPerType();
     }
 
     @GetMapping("/{type}")
     public ResponseEntity<MaterialPrice> getByType(@PathVariable String type) {
-        return materialPriceRepository.findByType(type)
+        if (isBlank(type)) {
+            return ResponseEntity.badRequest().build();
+        }
+        return materialPriceRepository.findFirstByTypeOrderByEffectiveDateDescFetchedAtDesc(type.trim())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{type}/history")
+    public ResponseEntity<List<MaterialPrice>> history(
+            @PathVariable String type,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
+    ) {
+        if (isBlank(type)) return ResponseEntity.badRequest().build();
+        String t = type.trim();
+        LocalDate toDate = isBlank(to) ? LocalDate.now() : LocalDate.parse(to.trim());
+        LocalDate fromDate = isBlank(from) ? toDate.minusDays(90) : LocalDate.parse(from.trim());
+        if (fromDate.isAfter(toDate)) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(materialPriceRepository.findByTypeAndEffectiveDateBetweenOrderByEffectiveDateDesc(t, fromDate, toDate));
     }
 
     @PostMapping
@@ -42,13 +62,17 @@ public class MaterialPriceController {
         }
 
         String type = request.getType().trim();
-        Optional<MaterialPrice> existing = materialPriceRepository.findByType(type);
+        LocalDate effectiveDate = request.getEffectiveDate();
+        if (effectiveDate == null) {
+            effectiveDate = request.getFetchedAt() == null ? LocalDate.now() : request.getFetchedAt().toLocalDate();
+        }
+        Optional<MaterialPrice> existing = materialPriceRepository.findByTypeAndEffectiveDate(type, effectiveDate);
         MaterialPrice p = existing.orElseGet(MaterialPrice::new);
         p.setType(type);
         p.setPricePerKg(request.getPricePerKg());
         if (!isBlank(request.getCurrency())) p.setCurrency(request.getCurrency().trim());
         if (!isBlank(request.getUnit())) p.setUnit(request.getUnit().trim());
-        if (request.getEffectiveDate() != null) p.setEffectiveDate(request.getEffectiveDate());
+        p.setEffectiveDate(effectiveDate);
         if (request.getFetchedAt() != null) p.setFetchedAt(request.getFetchedAt());
         if (!isBlank(request.getSourceName())) p.setSourceName(request.getSourceName().trim());
         if (!isBlank(request.getSourceUrl())) p.setSourceUrl(request.getSourceUrl().trim());
@@ -83,14 +107,18 @@ public class MaterialPriceController {
                 }
 
                 String type = item.getType().trim();
-                Optional<MaterialPrice> existing = materialPriceRepository.findByType(type);
+                LocalDate effectiveDate = item.getEffectiveDate();
+                if (effectiveDate == null) {
+                    effectiveDate = item.getFetchedAt() == null ? LocalDate.now() : item.getFetchedAt().toLocalDate();
+                }
+                Optional<MaterialPrice> existing = materialPriceRepository.findByTypeAndEffectiveDate(type, effectiveDate);
                 MaterialPrice p = existing.orElseGet(MaterialPrice::new);
                 boolean isInsert = existing.isEmpty();
                 p.setType(type);
                 p.setPricePerKg(item.getPricePerKg());
                 if (!isBlank(item.getCurrency())) p.setCurrency(item.getCurrency().trim());
                 if (!isBlank(item.getUnit())) p.setUnit(item.getUnit().trim());
-                if (item.getEffectiveDate() != null) p.setEffectiveDate(item.getEffectiveDate());
+                p.setEffectiveDate(effectiveDate);
                 if (item.getFetchedAt() != null) p.setFetchedAt(item.getFetchedAt());
                 if (!isBlank(item.getSourceName())) p.setSourceName(item.getSourceName().trim());
                 if (!isBlank(item.getSourceUrl())) p.setSourceUrl(item.getSourceUrl().trim());
@@ -111,11 +139,8 @@ public class MaterialPriceController {
 
     @DeleteMapping("/{type}")
     public ResponseEntity<Void> deleteByType(@PathVariable String type) {
-        Optional<MaterialPrice> existing = materialPriceRepository.findByType(type);
-        if (existing.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        materialPriceRepository.delete(existing.get());
+        if (isBlank(type)) return ResponseEntity.badRequest().build();
+        materialPriceRepository.deleteByType(type.trim());
         return ResponseEntity.noContent().build();
     }
 

@@ -20,6 +20,24 @@ public class AdminVehicleController {
 
     private final VehicleModelRepository vehicleModelRepository;
 
+    @GetMapping("/lookup")
+    public ResponseEntity<VehicleModel> lookup(
+            @RequestParam(required = false) String productId,
+            @RequestParam(required = false) String productNo
+    ) {
+        if (!isBlank(productId)) {
+            return vehicleModelRepository.findByProductId(productId.trim())
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        }
+        if (!isBlank(productNo)) {
+            return vehicleModelRepository.findByProductNo(productNo.trim())
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        }
+        return ResponseEntity.badRequest().build();
+    }
+
     @GetMapping
     public ResponseEntity<Page<VehicleModel>> search(
             @RequestParam(required = false) String q,
@@ -155,4 +173,3 @@ public class AdminVehicleController {
         return t.isEmpty() ? null : t;
     }
 }
-

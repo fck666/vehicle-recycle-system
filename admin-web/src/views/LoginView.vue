@@ -52,10 +52,15 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--el-bg-color-page);
+  background-color: #071a2a;
+  background-image: linear-gradient(180deg, rgba(7, 26, 42, 0.65), rgba(7, 26, 42, 0.85)), url('/login-bg.svg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 .card {
   width: 420px;
+  backdrop-filter: blur(10px);
 }
 .title {
   font-weight: 600;

@@ -2,13 +2,20 @@
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { MaterialPrice } from '../api/types'
-import { listMaterialPrices, upsertMaterialPrice } from '../api/material'
+import { getMaterialPriceHistory, listMaterialPrices, upsertMaterialPrice } from '../api/material'
 
 const loading = ref(false)
 const items = ref<MaterialPrice[]>([])
 
 const dialogVisible = ref(false)
-const form = reactive<{ type: string; pricePerKg: number | null }>({ type: '', pricePerKg: null })
+const form = reactive<{ type: string; pricePerKg: number | null; effectiveDate: string }>({ type: '', pricePerKg: null, effectiveDate: '' })
+
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyType = ref('')
+const historyFrom = ref('')
+const historyTo = ref('')
+const historyItems = ref<MaterialPrice[]>([])
 
 async function load() {
   loading.value = true
@@ -22,15 +29,56 @@ async function load() {
 function openEdit(row: MaterialPrice) {
   form.type = row.type
   form.pricePerKg = row.pricePerKg
+  form.effectiveDate = row.effectiveDate ?? ''
   dialogVisible.value = true
 }
 
 async function submit() {
   if (!form.type.trim() || form.pricePerKg == null) return
-  await upsertMaterialPrice({ type: form.type.trim(), pricePerKg: form.pricePerKg })
+  await upsertMaterialPrice({ type: form.type.trim(), pricePerKg: form.pricePerKg, effectiveDate: form.effectiveDate || undefined })
   ElMessage.success('已保存')
   dialogVisible.value = false
   load()
+}
+
+function defaultRangeDays(days: number) {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(to.getDate() - days)
+  const f = from.toISOString().slice(0, 10)
+  const t = to.toISOString().slice(0, 10)
+  return { f, t }
+}
+
+async function openHistory(row: MaterialPrice) {
+  historyVisible.value = true
+  historyLoading.value = true
+  historyType.value = row.type
+  if (!historyFrom.value || !historyTo.value) {
+    const r = defaultRangeDays(90)
+    historyFrom.value = r.f
+    historyTo.value = r.t
+  }
+  try {
+    historyItems.value = await getMaterialPriceHistory(historyType.value, historyFrom.value, historyTo.value)
+  } catch {
+    ElMessage.error('加载历史失败')
+    historyVisible.value = false
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function reloadHistory() {
+  if (!historyType.value) return
+  historyLoading.value = true
+  try {
+    historyItems.value = await getMaterialPriceHistory(historyType.value, historyFrom.value, historyTo.value)
+  } catch {
+    ElMessage.error('加载历史失败')
+  } finally {
+    historyLoading.value = false
+  }
 }
 
 load()
@@ -50,9 +98,16 @@ load()
       <el-table-column prop="effectiveDate" label="生效日期" width="140" />
       <el-table-column prop="fetchedAt" label="抓取时间" width="180" />
       <el-table-column prop="sourceName" label="来源" min-width="160" />
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="跳转" width="120">
+        <template #default="{ row }">
+          <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" :underline="false">实时查看</el-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" type="primary" @click="openHistory(row)">详情</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -66,10 +121,35 @@ load()
       <el-form-item label="价格(元/kg)" required>
         <el-input-number v-model="form.pricePerKg" :min="0" :precision="2" :step="0.1" />
       </el-form-item>
+      <el-form-item label="生效日期">
+        <el-input v-model="form.effectiveDate" placeholder="YYYY-MM-DD（默认当天）" />
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
       <el-button type="primary" @click="submit">保存</el-button>
     </template>
+  </el-dialog>
+
+  <el-dialog v-model="historyVisible" title="材料价格详情" width="960px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <div style="font-weight:600;">{{ historyType }}</div>
+      <div style="flex:1;" />
+      <el-input v-model="historyFrom" placeholder="from: YYYY-MM-DD" style="width:160px;" />
+      <el-input v-model="historyTo" placeholder="to: YYYY-MM-DD" style="width:160px;" />
+      <el-button :loading="historyLoading" @click="reloadHistory">查询</el-button>
+    </div>
+    <el-table :data="historyItems" v-loading="historyLoading" stripe>
+      <el-table-column prop="effectiveDate" label="生效日期" width="140" />
+      <el-table-column prop="pricePerKg" label="价格(元/kg)" width="140" />
+      <el-table-column prop="fetchedAt" label="抓取时间" width="180" />
+      <el-table-column prop="sourceName" label="来源" min-width="160" />
+      <el-table-column label="来源链接" min-width="220">
+        <template #default="{ row }">
+          <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" :underline="false">打开</el-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+    </el-table>
   </el-dialog>
 </template>

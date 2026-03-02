@@ -2,6 +2,7 @@
 
 本项目用于管理：
 - 车型信息（新增/编辑/删除/分页搜索）
+- 车型关联（导入外部车型版本库并半自动关联通用名称）
 - 材料价格（查看与手工修正）
 - 估值方式（材料配比模板维护）
 - 用户账号（创建/禁用/重置密码/角色分配）
@@ -41,3 +42,4 @@ npm run dev
 - 估值方式（模板）：`/api/material-templates`
 - 抓取记录：`/api/admin/job-runs`
 - 用户管理：`/api/admin/users`
+- 车型关联：`/api/admin/vehicle-mappings`、`/api/admin/external-trims`

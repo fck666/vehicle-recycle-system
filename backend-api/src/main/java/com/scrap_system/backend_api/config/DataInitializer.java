@@ -18,6 +18,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Component
@@ -45,6 +47,7 @@ public class DataInitializer implements CommandLineRunner {
         if (materialPriceRepository.count() == 0) {
             initPrices();
         }
+        fixMaterialPricesWithoutEffectiveDate();
     }
 
     private void initAuth() {
@@ -133,6 +136,19 @@ public class DataInitializer implements CommandLineRunner {
         MaterialPrice p = new MaterialPrice();
         p.setType(type);
         p.setPricePerKg(price);
+        p.setEffectiveDate(LocalDate.now());
+        p.setFetchedAt(LocalDateTime.now());
         materialPriceRepository.save(p);
+    }
+
+    private void fixMaterialPricesWithoutEffectiveDate() {
+        List<MaterialPrice> all = materialPriceRepository.findAll();
+        LocalDate today = LocalDate.now();
+        for (MaterialPrice p : all) {
+            if (p.getEffectiveDate() == null) {
+                p.setEffectiveDate(p.getFetchedAt() == null ? today : p.getFetchedAt().toLocalDate());
+                materialPriceRepository.save(p);
+            }
+        }
     }
 }

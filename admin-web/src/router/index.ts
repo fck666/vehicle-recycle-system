@@ -8,6 +8,8 @@ import { useAuthStore } from '../stores/auth'
 import MaterialFetchRunsView from '../views/MaterialFetchRunsView.vue'
 import VehicleIngestRunsView from '../views/VehicleIngestRunsView.vue'
 import UsersView from '../views/UsersView.vue'
+import VehicleMappingsView from '../views/VehicleMappingsView.vue'
+import MiitCpJobsView from '../views/MiitCpJobsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -19,7 +21,9 @@ const router = createRouter({
     { path: '/material-templates', name: 'material-templates', component: MaterialTemplatesView },
     { path: '/jobs/material-price', name: 'jobs-material-price', component: MaterialFetchRunsView },
     { path: '/jobs/vehicle', name: 'jobs-vehicle', component: VehicleIngestRunsView },
+    { path: '/jobs/miit-cp', name: 'jobs-miit-cp', component: MiitCpJobsView },
     { path: '/users', name: 'users', component: UsersView },
+    { path: '/vehicle-mappings', name: 'vehicle-mappings', component: VehicleMappingsView },
   ],
 })
 

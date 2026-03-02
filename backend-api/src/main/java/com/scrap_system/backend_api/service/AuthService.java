@@ -33,7 +33,7 @@ public class AuthService {
     @Value("${app.security.phone.dev-accept-phone:false}")
     private boolean devAcceptPhone;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthLoginResponse login(String username, String password, String clientType) {
         if (username == null || username.trim().isEmpty() || password == null) {
             throw new IllegalArgumentException("bad credentials");
