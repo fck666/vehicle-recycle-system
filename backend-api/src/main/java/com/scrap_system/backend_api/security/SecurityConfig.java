@@ -24,21 +24,23 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable());
         http.cors(Customizer.withDefaults());
+        // Allow iframe for HTML preview
+        http.headers(headers -> headers.frameOptions(frame -> frame.disable()));
         http.sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         http.authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/uploads/**").permitAll()
                 .requestMatchers("/error").permitAll()
-                // Allow MIIT crawler related endpoints without token
-                .requestMatchers("/api/admin/miit-cp-jobs/**").permitAll()
-                .requestMatchers("/api/admin/vehicles/lookup").permitAll()
-                .requestMatchers("/api/admin/files/upload").permitAll()
-                .requestMatchers("/api/vehicle-specs/batch").permitAll()
-                .requestMatchers("/api/vehicle-documents/batch").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/material-prices/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/material-templates/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/vehicles/**").permitAll()
+                .requestMatchers("/api/admin/miit-cp-jobs/**").hasRole("ADMIN")
+                .requestMatchers("/api/admin/vehicles/lookup").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers("/api/admin/files/upload").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers(HttpMethod.POST, "/api/admin/vehicles/*/images").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers("/api/vehicle-specs/batch").authenticated()
+                .requestMatchers("/api/vehicle-documents/batch").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/material-prices/**").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/material-templates/**").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/vehicles/**").authenticated()
                 .requestMatchers(HttpMethod.POST, "/api/material-prices/batch").hasAnyRole("SERVICE", "ADMIN", "OPERATOR")
                 .requestMatchers(HttpMethod.POST, "/api/material-prices").hasAnyRole("SERVICE", "ADMIN", "OPERATOR")
                 .requestMatchers(HttpMethod.DELETE, "/api/material-prices/**").hasAnyRole("ADMIN", "OPERATOR")

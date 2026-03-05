@@ -170,6 +170,17 @@ async function removeDoc(vehicleId: number, doc: VehicleDocument) {
   }
 }
 
+async function handleUploadSuccess() {
+  ElMessage.success('上传成功')
+  if (mediaVehicle.value) {
+    mediaVehicle.value = await getVehicle(mediaVehicle.value.id)
+  }
+}
+
+function handleUploadError() {
+  ElMessage.error('上传失败')
+}
+
 function onSizeChange(v: number) {
   size.value = v
   page.value = 0
@@ -207,11 +218,21 @@ load()
       <el-table-column prop="batteryKwh" label="电池(kWh)" width="120" />
       <el-table-column prop="productId" label="产品ID" width="140" />
       <el-table-column prop="productNo" label="产品号" width="160" />
+      <el-table-column prop="batchNo" label="批次" width="100" />
+      <el-table-column label="HTML 存档" width="160">
+        <template #default="{ row }">
+          <div v-if="row.documents && row.documents.length > 0">
+            <el-link :href="row.documents[0].docUrl" target="_blank" underline="never" type="primary">查看网页</el-link>
+            <el-link v-if="row.documents[0].sourceUrl" :href="row.documents[0].sourceUrl" target="_blank" underline="never" type="warning" style="margin-left:8px;font-size:12px;">来源</el-link>
+          </div>
+          <span v-else style="color:var(--el-text-color-placeholder);">无</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openMedia(row)">媒体</el-button>
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="onDelete(row)">删除</el-button>
+          <el-button link type="primary" size="small" @click="openMedia(row)">媒体</el-button>
+          <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="danger" size="small" @click="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -274,7 +295,19 @@ load()
 
       <el-card v-if="mediaVehicle" style="margin-bottom:12px;">
         <template #header>
-          <div style="font-weight:600;">图片</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-weight:600;">图片</div>
+            <el-upload
+              :action="`/api/admin/vehicles/${mediaVehicle.id}/images`"
+              :show-file-list="false"
+              :on-success="handleUploadSuccess"
+              :on-error="handleUploadError"
+              accept="image/*"
+              style="display:inline-block;"
+            >
+              <el-button type="primary" size="small">上传图片</el-button>
+            </el-upload>
+          </div>
         </template>
         <el-table :data="mediaVehicle.images || []" stripe>
           <el-table-column label="预览" width="120">
@@ -311,13 +344,13 @@ load()
           <el-table-column prop="fetchedAt" label="抓取时间" width="190" />
           <el-table-column label="链接" min-width="240">
             <template #default="{ row }">
-              <el-link :href="row.docUrl" target="_blank" :underline="false">打开</el-link>
+              <el-link :href="row.docUrl" target="_blank" underline="never">打开</el-link>
               <el-button size="small" style="margin-left:8px;" @click="showDoc(row.docUrl)">预览</el-button>
             </template>
           </el-table-column>
           <el-table-column label="来源" min-width="200">
             <template #default="{ row }">
-              <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" :underline="false">来源页</el-link>
+              <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" underline="never">来源页</el-link>
               <span v-else>-</span>
             </template>
           </el-table-column>

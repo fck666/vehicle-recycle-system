@@ -19,6 +19,7 @@ import java.util.Optional;
 public class AdminVehicleController {
 
     private final VehicleModelRepository vehicleModelRepository;
+    private final com.scrap_system.backend_api.service.FileStorageService fileStorageService;
 
     @GetMapping("/lookup")
     public ResponseEntity<VehicleModel> lookup(
@@ -87,10 +88,25 @@ public class AdminVehicleController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (!vehicleModelRepository.existsById(id)) {
+        Optional<VehicleModel> existing = vehicleModelRepository.findById(id);
+        if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        vehicleModelRepository.deleteById(id);
+        VehicleModel v = existing.get();
+        
+        // Delete physical files
+        if (v.getImages() != null) {
+            for (com.scrap_system.backend_api.model.VehicleImage img : v.getImages()) {
+                fileStorageService.deleteFile(img.getImageUrl());
+            }
+        }
+        if (v.getDocuments() != null) {
+            for (com.scrap_system.backend_api.model.VehicleDocument doc : v.getDocuments()) {
+                fileStorageService.deleteFile(doc.getDocUrl());
+            }
+        }
+        
+        vehicleModelRepository.delete(v);
         return ResponseEntity.noContent().build();
     }
 

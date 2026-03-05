@@ -100,7 +100,7 @@ load()
       <el-table-column prop="sourceName" label="来源" min-width="160" />
       <el-table-column label="跳转" width="120">
         <template #default="{ row }">
-          <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" :underline="false">实时查看</el-link>
+          <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" underline="never">实时查看</el-link>
           <span v-else>-</span>
         </template>
       </el-table-column>
@@ -146,7 +146,7 @@ load()
       <el-table-column prop="sourceName" label="来源" min-width="160" />
       <el-table-column label="来源链接" min-width="220">
         <template #default="{ row }">
-          <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" :underline="false">打开</el-link>
+          <el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" underline="never">打开</el-link>
           <span v-else>-</span>
         </template>
       </el-table-column>

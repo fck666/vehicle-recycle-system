@@ -1,31 +1,63 @@
+server:
+  port: 8090
+  servlet:
+    context-path: /
+
 spring:
   config:
     activate:
       on-profile: prod
+  
   datasource:
-    # 生产环境从环境变量读取，避免硬编码
-    url: ${DB_URL:jdbc:mysql://localhost:3306/scrap_system?useSSL=true&serverTimezone=Asia/Shanghai&characterEncoding=utf-8}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    url: jdbc:mysql://${DB_HOST:localhost}:3306/${DB_NAME:scrap_system}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf-8
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      minimum-idle: 5
       maximum-pool-size: 20
+      minimum-idle: 5
       idle-timeout: 30000
       max-lifetime: 1800000
       connection-timeout: 30000
+
   jpa:
     hibernate:
-      ddl-auto: validate # 生产环境仅验证表结构，禁止自动修改
-    show-sql: false      # 生产环境关闭 SQL 打印
+      ddl-auto: update # Or validate in strict production
+    show-sql: false
     properties:
       hibernate:
         format_sql: false
-  sql:
-    init:
-      mode: never # 生产环境禁止自动初始化数据
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  # Redis Configuration (If using Redis for session/cache)
+  # data:
+  #   redis:
+  #     host: ${REDIS_HOST:localhost}
+  #     port: ${REDIS_PORT:6379}
+  #     password: ${REDIS_PASSWORD:}
+  #     database: 0
+
+aliyun:
+  oss:
+    endpoint: ${OSS_ENDPOINT}
+    access-key-id: ${OSS_ACCESS_KEY_ID}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET}
+    bucket-name: ${OSS_BUCKET_NAME}
+    domain: ${OSS_DOMAIN:} # Optional CDN domain
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 2592000000 # 30 days (86400000 * 30)
+
+logging:
+  level:
+    root: INFO
+    com.scrap_system: INFO
+  file:
+    name: logs/app.log
+    max-history: 30
+    max-size: 100MB
 
 app:
-  security:
-    jwt:
-      secret: ${JWT_SECRET:}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}

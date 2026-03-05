@@ -46,13 +46,28 @@ python -m miit_vehicle_crawler.cli cp-sync \
 
 ### 方式 2：作为本机 Worker 轮询执行管理端任务（生产环境推荐）
 
-在管理端（Admin Web）创建“工信部抓取任务”后，在本机运行 Worker。Worker 会自动领取任务、执行抓取并实时回传进度。
+Worker 模式是推荐的运行方式，它会自动监听后端 API 创建的任务并执行抓取。
+
+**1. 启动 Worker：**
 
 ```bash
-python -m miit_vehicle_crawler.cli worker --backend http://localhost:8090 --token <ADMIN_TOKEN>
+python3 -m miit_vehicle_crawler.cli worker --backend http://localhost:8090 --token "any"
 ```
+（注：后端已放行任务接口，Token 可随意填写或留空）
 
-### 方式 3：人机协同发现模式
+**2. 在管理端创建任务：**
+- 访问管理后台：`http://localhost:5173/miit-cp-jobs`
+- 点击“创建任务”
+- 填写批次范围（如 397-398）
+- 填写企业名称列表（如 `一汽-大众`，支持简称模糊匹配）
+- 提交后，Worker 会自动领取任务并开始抓取。
+
+**3. 查看结果：**
+- 任务列表页会实时显示进度。
+- 抓取完成后，可在“车辆规格管理”页面查看入库的车型数据。
+- 点击详情页的“HTML 存档”链接可查看原始网页镜像。
+
+### 方式 3：命令行单次抓取（调试用）
 
 ```bash
 python -m miit_vehicle_crawler.cli discover --output data/candidates.jsonl

@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
+from bs4 import BeautifulSoup
 
 
 BASE = "https://service.miit-eidc.org.cn/miitxxgk/gonggao/xxgk/"
@@ -113,12 +114,15 @@ def _parse_cp_list(items: list[dict[str, Any]]) -> list[CpListItem]:
 def parse_detail_html(html: str, detail_url: str) -> tuple[dict[str, str], list[str]]:
     field_map: dict[str, str] = {}
 
-    s = html.replace("\r", "").replace("\n", "")
-    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", s, flags=re.I)
+    # Use BeautifulSoup for robust parsing
+    soup = BeautifulSoup(html, "html.parser")
+    
+    # Parse table rows
+    rows = soup.find_all("tr")
     for row in rows:
-        tds = re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.I)
-        texts = [_strip_tags(x) for x in tds]
-        texts = [x for x in texts if x != ""]
+        cols = row.find_all("td")
+        texts = [c.get_text(strip=True) for c in cols]
+        texts = [x for x in texts if x]
         if len(texts) >= 2:
             for i in range(0, len(texts) - 1, 2):
                 k = texts[i]
@@ -126,11 +130,15 @@ def parse_detail_html(html: str, detail_url: str) -> tuple[dict[str, str], list[
                 if k:
                     field_map[k] = v
 
-    img_srcs = re.findall(r"<img[^>]+src=\"([^\"]+)\"", s, flags=re.I)
+    # Parse images
     imgs: list[str] = []
-    for src in img_srcs:
-        if "getPic" in src and ("gid=" in src or "pc=" in src):
-            imgs.append(urljoin(detail_url, src))
+    img_tags = soup.find_all("img")
+    for img in img_tags:
+        src = img.get("src")
+        if src and "getPic" in src and ("gid=" in src or "pc=" in src):
+            # Handle potential relative URLs
+            imgs.append(requests.compat.urljoin(detail_url, src))
+            
     imgs = list(dict.fromkeys(imgs))
     return field_map, imgs
 

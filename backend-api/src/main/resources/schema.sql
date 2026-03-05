@@ -44,7 +44,12 @@ CREATE TABLE IF NOT EXISTS vehicle_model (
   spec_raw_json LONGTEXT,
   vehicle_type VARCHAR(32) NOT NULL,
   source_site VARCHAR(32),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_vm_brand (brand),
+  INDEX idx_vm_model (model),
+  INDEX idx_vm_product_id (product_id),
+  INDEX idx_vm_product_no (product_no),
+  INDEX idx_vm_release_date (release_date)
 );
 
 CREATE TABLE IF NOT EXISTS material_template (

@@ -164,7 +164,7 @@ load()
               <el-image v-if="row.externalCoverUrl" :src="row.externalCoverUrl" style="width:72px;height:44px;object-fit:cover;border-radius:6px;" />
               <div>
                 <div style="font-weight:600;">{{ row.externalMarketName }}</div>
-                <el-link v-if="row.externalPageUrl" :href="row.externalPageUrl" target="_blank" :underline="false">打开来源页</el-link>
+                <el-link v-if="row.externalPageUrl" :href="row.externalPageUrl" target="_blank" underline="never">打开来源页</el-link>
               </div>
             </div>
           </div>
@@ -233,7 +233,7 @@ load()
                   <div style="color:var(--el-text-color-secondary);font-size:12px;">
                     {{ row.source }} / {{ row.seriesName || '-' }} / {{ row.modelYear || '-' }} / {{ row.energyType || '-' }}
                   </div>
-                  <el-link v-if="row.pageUrl" :href="row.pageUrl" target="_blank" :underline="false">打开来源页</el-link>
+                  <el-link v-if="row.pageUrl" :href="row.pageUrl" target="_blank" underline="never">打开来源页</el-link>
                 </div>
               </div>
             </template>
@@ -265,7 +265,7 @@ load()
                   <div style="color:var(--el-text-color-secondary);font-size:12px;">
                     {{ row.source }} / {{ row.brand }} / {{ row.seriesName || '-' }} / {{ row.modelYear || '-' }} / {{ row.energyType || '-' }}
                   </div>
-                  <el-link v-if="row.pageUrl" :href="row.pageUrl" target="_blank" :underline="false">打开来源页</el-link>
+                  <el-link v-if="row.pageUrl" :href="row.pageUrl" target="_blank" underline="never">打开来源页</el-link>
                 </div>
               </div>
             </template>

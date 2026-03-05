@@ -13,7 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
 @Service
-@Profile({"dev", "local", "test"})
+@Profile("!prod") // Active in dev, local, test, or default
 public class LocalFileStorageService implements FileStorageService {
 
     private final Path rootLocation = Paths.get("uploads").toAbsolutePath().normalize();
@@ -63,6 +63,27 @@ public class LocalFileStorageService implements FileStorageService {
             return "/uploads/" + normalizedSubPath + "/" + filename;
         } catch (IOException e) {
             throw new RuntimeException("Failed to store file.", e);
+        }
+    }
+
+    @Override
+    public void deleteFile(String url) {
+        if (url == null || !url.startsWith("/uploads/")) {
+            return;
+        }
+        try {
+            String relativePath = url.substring("/uploads/".length());
+            // Protect against path traversal
+            if (relativePath.contains("..")) {
+                return;
+            }
+            Path file = rootLocation.resolve(relativePath).normalize();
+            if (!file.startsWith(rootLocation)) {
+                return;
+            }
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            // Ignore error
         }
     }
 }

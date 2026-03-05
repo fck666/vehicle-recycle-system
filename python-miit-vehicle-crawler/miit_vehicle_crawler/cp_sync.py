@@ -347,11 +347,27 @@ def sync_cp(
                     log("miit.cp.lookup.error", err=str(e))
 
                 if existing_vehicle:
-                    log("miit.cp.exists.skip_detail", cpid=it.cpid, vid=existing_vehicle.get("id"))
-                    skipped += 1
-                    if on_progress:
-                        on_progress({"stage": "SKIP", "idx": idx, "total": len(items), "reason": "exists"})
-                    continue
+                    # Enhanced Dedup: Check completeness
+                    # We require at least one image and one HTML doc to consider it "done"
+                    # However, some vehicles might genuinely have no images. 
+                    # But for MIIT crawler, usually there should be images.
+                    # Let's check if images list is present and not empty.
+                    
+                    images = existing_vehicle.get("images") or []
+                    # documents might be list of dicts
+                    docs = existing_vehicle.get("documents") or []
+                    has_html = any(d.get("docType") == "MIIT_HTML" for d in docs)
+                    
+                    if images and has_html:
+                        log("miit.cp.exists.skip_detail", cpid=it.cpid, vid=existing_vehicle.get("id"))
+                        skipped += 1
+                        if on_progress:
+                            on_progress({"stage": "SKIP", "idx": idx, "total": len(items), "reason": "exists_complete"})
+                        continue
+                    else:
+                        log("miit.cp.exists.incomplete", cpid=it.cpid, vid=existing_vehicle.get("id"), img_count=len(images), has_html=has_html)
+                        # Fallthrough to fetch detail
+
 
                 log("miit.cp.detail.open", idx=idx, total=len(items), cpid=it.cpid, pc=it.pc)
                 if on_progress:
@@ -527,13 +543,62 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
 def _rewrite_html(html: str, img_map: dict[str, str]) -> str:
     if not img_map:
         return html
-    out = html
-    for old, new in img_map.items():
-        out = out.replace(old, new)
-        try:
-            rel = old.split("/xxgk/", 1)[1]
-            out = out.replace(rel, new)
-            out = out.replace("/miitxxgk/gonggao/xxgk/" + rel, new)
-        except Exception:
-            pass
-    return out
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        imgs = soup.find_all("img")
+        
+        # Base URL for resolving relative paths
+        base_url = "https://service.miit-eidc.org.cn/miitxxgk/gonggao/xxgk/queryCpData"
+        
+        changed = False
+        
+        # Remove external CSS to avoid 404/MIME errors
+        for link in soup.find_all("link", rel="stylesheet"):
+            link.decompose()
+            changed = True
+
+        # Inject basic table styles
+        style = soup.new_tag("style")
+        style.string = """
+            body { font-family: Arial, sans-serif; font-size: 14px; }
+            table { border-collapse: collapse; width: 100%; margin-bottom: 10px; background-color: #fff; }
+            td, th { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+            td.title { background-color: #f0f5f9; font-weight: bold; width: 150px; }
+            img { max-width: 100%; height: auto; display: block; margin: 5px 0; }
+        """
+        if soup.head:
+            soup.head.append(style)
+            changed = True
+        elif soup.body:
+            soup.body.insert(0, style)
+            changed = True
+
+        for img in imgs:
+            src = img.get("src")
+            if not src:
+                continue
+            
+            # Normalize src to absolute URL to match with img_map keys
+            abs_src = requests.compat.urljoin(base_url, src)
+            
+            # Try exact match
+            if abs_src in img_map:
+                img["src"] = img_map[abs_src]
+                changed = True
+                continue
+                
+            # Try fuzzy match (sometimes urljoin might be slightly off due to query params order)
+            # But here we rely on the map built during download which used the same extraction logic
+            
+            # Also try to replace in the map if the key in map is relative (unlikely but possible)
+            if src in img_map:
+                img["src"] = img_map[src]
+                changed = True
+        
+        if changed:
+            return str(soup)
+        return html
+    except Exception as e:
+        log("html.rewrite.error", err=str(e))
+        return html

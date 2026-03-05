@@ -13,24 +13,18 @@ const result = ref<Page<JobRun>>({ content: [], totalElements: 0, totalPages: 0,
 const form = reactive({
   pcFrom: 398,
   pcTo: 398,
-  cpsbListText: '大众牌,奥迪(AUDI)牌',
   qymc: '',
   clxh: '',
   clmc: '',
   pageSize: 10,
-  limit: 0,
+  limit: 200,
   headful: false,
-  qymcListText: '',
+  qymcListText: '大众,奥迪',
 })
 
 const workerCmd = computed(() => {
   return `python -m miit_vehicle_crawler.cli worker --backend http://localhost:8090 --token <ADMIN_TOKEN>`
 })
-
-function parseBrands() {
-  if (!form.cpsbListText) return []
-  return form.cpsbListText.split(/[,，]/).map(s => s.trim()).filter(s => !!s)
-}
 
 function parseQymcList() {
   if (!form.qymcListText) return []
@@ -53,13 +47,8 @@ async function createJob() {
     ElMessage.warning('批次起始不能大于结束')
     return
   }
-  const cpsbList = parseBrands()
   const qymcList = parseQymcList()
-  if (cpsbList.length > 0 && qymcList.length > 0) {
-    ElMessage.warning('不能同时指定品牌列表和企业名称列表，请二选一')
-    return
-  }
-  if (!qymcList.length && !cpsbList.length && !form.clxh.trim() && !form.clmc.trim()) {
+  if (!qymcList.length && !form.clxh.trim() && !form.clmc.trim()) {
     ElMessage.warning('至少提供一个查询条件（长度不少于2）')
     return
   }
@@ -70,7 +59,6 @@ async function createJob() {
       qymc: form.qymc.trim() || null,
       clxh: form.clxh.trim() || null,
       clmc: form.clmc.trim() || null,
-      cpsbList: cpsbList.length ? cpsbList : null,
       qymcList: qymcList.length ? qymcList : null,
       pageSize: form.pageSize || null,
       limit: form.limit || null,
@@ -120,9 +108,6 @@ load()
       </el-form-item>
       <el-form-item label="企业名称列表(qymc-list)">
         <el-input v-model="form.qymcListText" placeholder="逗号分隔，支持简称模糊匹配，例如：大众,奥迪,蔚来" />
-      </el-form-item>
-      <el-form-item label="品牌范围(cpsb-list)">
-        <el-input v-model="form.cpsbListText" placeholder="逗号分隔，例如：大众牌,奥迪(AUDI)牌" />
       </el-form-item>
       <el-form-item label="车辆型号(clxh)">
         <el-input v-model="form.clxh" placeholder="例如：FV6506" />
