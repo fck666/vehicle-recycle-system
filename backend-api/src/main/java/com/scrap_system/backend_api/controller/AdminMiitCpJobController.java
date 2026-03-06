@@ -73,6 +73,7 @@ public class AdminMiitCpJobController {
         config.put("pcFrom", pcFrom);
         config.put("pcTo", pcTo);
         config.put("qymc", trimOrNull(request.getQymc()));
+        config.put("cpsb", trimOrNull(request.getCpsb()));
         config.put("clxh", trimOrNull(request.getClxh()));
         config.put("clmc", trimOrNull(request.getClmc()));
         config.put("cpsbList", request.getCpsbList() == null ? null : request.getCpsbList().stream().filter(s -> s != null && !s.trim().isEmpty()).map(String::trim).toList());
@@ -178,4 +179,3 @@ public class AdminMiitCpJobController {
         }
     }
 }
-

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
 import type { MaterialPrice } from '../api/types'
 import { getMaterialPriceHistory, listMaterialPrices, upsertMaterialPrice } from '../api/material'
@@ -16,6 +17,9 @@ const historyType = ref('')
 const historyFrom = ref('')
 const historyTo = ref('')
 const historyItems = ref<MaterialPrice[]>([])
+
+const auth = useAuthStore()
+const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERATOR'].includes(r)))
 
 async function load() {
   loading.value = true
@@ -106,7 +110,7 @@ load()
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canEdit" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="primary" @click="openHistory(row)">详情</el-button>
         </template>
       </el-table-column>

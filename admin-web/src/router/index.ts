@@ -12,7 +12,7 @@ import VehicleMappingsView from '../views/VehicleMappingsView.vue'
 import MiitCpJobsView from '../views/MiitCpJobsView.vue'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: LoginView },
     { path: '/', name: 'dashboard', component: DashboardView },

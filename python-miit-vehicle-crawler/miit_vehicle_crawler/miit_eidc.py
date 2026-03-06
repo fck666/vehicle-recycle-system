@@ -132,6 +132,8 @@ def parse_detail_html(html: str, detail_url: str) -> tuple[dict[str, str], list[
 
     # Parse images
     imgs: list[str] = []
+    # If there are no images, we still return empty list, we do not fail.
+    # The caller logic should handle empty images gracefully.
     img_tags = soup.find_all("img")
     for img in img_tags:
         src = img.get("src")

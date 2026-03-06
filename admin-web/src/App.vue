@@ -32,7 +32,7 @@ async function logout() {
         <el-menu-item index="/material-prices">材料价格</el-menu-item>
         <el-menu-item index="/material-templates">估值方式</el-menu-item>
         <el-menu-item v-if="isAdmin" index="/users">用户管理</el-menu-item>
-        <el-sub-menu index="/jobs">
+        <el-sub-menu v-if="isAdmin" index="/jobs">
           <template #title>抓取任务</template>
           <el-menu-item index="/jobs/material-price">材料抓取</el-menu-item>
           <el-menu-item index="/jobs/vehicle">车型抓取</el-menu-item>

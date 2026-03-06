@@ -36,6 +36,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/vehicles/lookup").hasAnyRole("ADMIN", "OPERATOR")
                 .requestMatchers("/api/admin/files/upload").hasAnyRole("ADMIN", "OPERATOR")
                 .requestMatchers(HttpMethod.POST, "/api/admin/vehicles/*/images").hasAnyRole("ADMIN", "OPERATOR")
+                // Allow ordinary users to view vehicle list and details
+                .requestMatchers(HttpMethod.GET, "/api/admin/vehicles/**").authenticated()
                 .requestMatchers("/api/vehicle-specs/batch").authenticated()
                 .requestMatchers("/api/vehicle-documents/batch").authenticated()
                 .requestMatchers(HttpMethod.GET, "/api/material-prices/**").authenticated()

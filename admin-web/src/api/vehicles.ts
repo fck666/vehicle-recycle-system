@@ -1,12 +1,30 @@
 import { requestJson } from './client'
 import type { Page, VehicleModel, VehicleUpsertRequest } from './types'
 
-export async function searchVehicles(q: string, page: number, size: number): Promise<Page<VehicleModel>> {
-  const params = new URLSearchParams()
-  if (q.trim()) params.set('q', q.trim())
-  params.set('page', String(page))
-  params.set('size', String(size))
-  return requestJson<Page<VehicleModel>>('GET', `/api/admin/vehicles?${params.toString()}`)
+export interface VehicleSearchParams {
+  q?: string
+  brands?: string[]
+  manufacturers?: string[]
+  vehicleTypes?: string[]
+  fuelTypes?: string[]
+  sourceTypes?: string[]
+  page?: number
+  size?: number
+}
+
+export async function searchVehicles(params: VehicleSearchParams): Promise<Page<VehicleModel>> {
+  const query = new URLSearchParams()
+  if (params.q) query.append('q', params.q)
+  if (params.brands) params.brands.forEach(b => query.append('brands', b))
+  if (params.manufacturers) params.manufacturers.forEach(m => query.append('manufacturers', m))
+  if (params.vehicleTypes) params.vehicleTypes.forEach(t => query.append('vehicleTypes', t))
+  if (params.fuelTypes) params.fuelTypes.forEach(f => query.append('fuelTypes', f))
+  if (params.sourceTypes) params.sourceTypes.forEach(s => query.append('sourceTypes', s))
+  
+  query.append('page', (params.page || 0).toString())
+  query.append('size', (params.size || 20).toString())
+  
+  return requestJson<Page<VehicleModel>>('GET', `/api/admin/vehicles?${query.toString()}`)
 }
 
 export async function getVehicle(id: number): Promise<VehicleModel> {

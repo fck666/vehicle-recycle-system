@@ -1,5 +1,6 @@
 package com.scrap_system.backend_api.dto;
 
+import com.scrap_system.backend_api.model.enums.VehicleSourceType;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -7,6 +8,7 @@ import java.time.LocalDate;
 
 @Data
 public class VehicleUpsertRequest {
+    private VehicleSourceType sourceType;
     private String brand;
     private String model;
     private Integer modelYear;

@@ -12,6 +12,10 @@ export class HttpError extends Error {
 }
 
 export async function requestJson<T>(method: HttpMethod, url: string, body?: unknown): Promise<T> {
+  // In production, Nginx will proxy /api to backend. In dev, Vite proxy handles it.
+  // So we can just use relative path or respect VITE_API_BASE_URL if needed.
+  // For now, we assume relative path works fine with proxy.
+  
   const token = getToken()
   const headers: Record<string, string> = {}
   if (body) headers['Content-Type'] = 'application/json'

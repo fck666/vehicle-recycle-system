@@ -358,7 +358,7 @@ def sync_cp(
                     docs = existing_vehicle.get("documents") or []
                     has_html = any(d.get("docType") == "MIIT_HTML" for d in docs)
                     
-                    if images and has_html:
+                    if has_html:
                         log("miit.cp.exists.skip_detail", cpid=it.cpid, vid=existing_vehicle.get("id"))
                         skipped += 1
                         if on_progress:
@@ -408,11 +408,18 @@ def sync_cp(
 
                 # Lookup again to get ID for images
                 vehicle = _lookup_vehicle(session, backend, spec.get("productId"), spec.get("productNo"))
-                if vehicle and vehicle.get("id"):
-                    vehicle_id = int(vehicle["id"])
-                    img_count, img_map = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
-                    images_uploaded += img_count
+                vehicle_id = int(vehicle["id"]) if vehicle and vehicle.get("id") else None
+                img_map = {}
+                if vehicle_id is not None:
+                    try:
+                        img_count, img_map = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
+                        images_uploaded += img_count
+                    except Exception as e:
+                        log("miit.cp.image.error", cpid=it.cpid, err=str(e), msg="Continuing with HTML upload")
+                try:
                     html_docs += _upload_html_doc(session, backend, vehicle_id, it, _rewrite_html(html, img_map))
+                except Exception as e:
+                    log("miit.cp.html.error", cpid=it.cpid, err=str(e))
                 
                 if on_progress:
                     on_progress({"stage": "DETAIL_DONE", "idx": idx, "total": len(items), "inserted": inserted, "updated": updated, "skipped": skipped, "imagesUploaded": images_uploaded, "htmlDocs": html_docs})
@@ -463,17 +470,18 @@ def _lookup_vehicle(session: requests.Session, backend: str, product_id: str | N
     return resp.json()
 
 
-def _upload_html_doc(session: requests.Session, backend: str, vehicle_id: int, it: CpListItem, html: str) -> int:
+def _upload_html_doc(session: requests.Session, backend: str, vehicle_id: int | None, it: CpListItem, html: str) -> int:
     sha = hashlib.sha256(html.encode("utf-8")).hexdigest()
     name = f"miit_{it.pc}_{it.cpid}.html"
     with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as f:
         f.write(html.encode("utf-8"))
         tmp_path = f.name
     try:
-        url = _upload_file(session, backend, tmp_path, f"vehicles/{vehicle_id}")
+        path = f"vehicles/{vehicle_id}" if vehicle_id is not None else f"miit_html/{it.pc}"
+        url = _upload_file(session, backend, tmp_path, path)
         doc = {
             "productId": it.cpid,
-            "productNo": None,
+            "productNo": it.clxh,
             "docType": "MIIT_HTML",
             "docName": name,
             "docUrl": url,

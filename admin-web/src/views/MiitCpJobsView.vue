@@ -13,12 +13,12 @@ const result = ref<Page<JobRun>>({ content: [], totalElements: 0, totalPages: 0,
 const form = reactive({
   pcFrom: 398,
   pcTo: 398,
-  qymc: '',
+  cpsb: '',
   clxh: '',
   clmc: '',
   pageSize: 10,
   limit: 200,
-  headful: false,
+  headful: true,
   qymcListText: '大众,奥迪',
 })
 
@@ -48,7 +48,7 @@ async function createJob() {
     return
   }
   const qymcList = parseQymcList()
-  if (!qymcList.length && !form.clxh.trim() && !form.clmc.trim()) {
+  if (!qymcList.length && !form.cpsb.trim() && !form.clxh.trim() && !form.clmc.trim()) {
     ElMessage.warning('至少提供一个查询条件（长度不少于2）')
     return
   }
@@ -56,10 +56,10 @@ async function createJob() {
     await createMiitCpJob({
       pcFrom: form.pcFrom,
       pcTo: form.pcTo,
-      qymc: form.qymc.trim() || null,
+      cpsb: form.cpsb.trim() || null,
+      qymcList: qymcList.length ? qymcList : null,
       clxh: form.clxh.trim() || null,
       clmc: form.clmc.trim() || null,
-      qymcList: qymcList.length ? qymcList : null,
       pageSize: form.pageSize || null,
       limit: form.limit || null,
       headful: !!form.headful,
@@ -98,7 +98,7 @@ load()
     <template #header>
       <div style="font-weight:600;">创建工信部抓取任务（本机执行）</div>
     </template>
-    <el-form label-width="120px">
+    <el-form class="miit-job-form" label-width="160px">
       <el-form-item label="批次范围" required>
         <div style="display:flex;gap:10px;align-items:center;">
           <el-input-number v-model="form.pcFrom" :min="1" :max="9999" />
@@ -106,8 +106,11 @@ load()
           <el-input-number v-model="form.pcTo" :min="1" :max="9999" />
         </div>
       </el-form-item>
-      <el-form-item label="企业名称列表(qymc-list)">
+      <el-form-item label="企业名称列表">
         <el-input v-model="form.qymcListText" placeholder="逗号分隔，支持简称模糊匹配，例如：大众,奥迪,蔚来" />
+      </el-form-item>
+      <el-form-item label="产品商标(cpsb)">
+        <el-input v-model="form.cpsb" placeholder="例如：大众牌、奥迪(AUDI)牌" />
       </el-form-item>
       <el-form-item label="车辆型号(clxh)">
         <el-input v-model="form.clxh" placeholder="例如：FV6506" />
@@ -183,3 +186,9 @@ load()
     </div>
   </el-card>
 </template>
+
+<style scoped>
+.miit-job-form :deep(.el-form-item__label) {
+  white-space: nowrap;
+}
+</style>

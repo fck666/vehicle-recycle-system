@@ -9,6 +9,7 @@ public class MiitCpSyncJobCreateRequest {
     private Integer pcFrom;
     private Integer pcTo;
     private String qymc;
+    private String cpsb;
     private String clxh;
     private String clmc;
     private List<String> cpsbList;
@@ -33,4 +34,3 @@ public class MiitCpSyncJobCreateRequest {
         this.qymcList = qymcList;
     }
 }
-

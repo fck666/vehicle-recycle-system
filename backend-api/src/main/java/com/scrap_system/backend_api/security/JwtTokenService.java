@@ -20,7 +20,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class JwtTokenService {
 
-    @Value("${app.security.jwt.secret:}")
+    @Value("${jwt.secret:${app.security.jwt.secret:}}")
     private String secret;
 
     @Value("${app.security.jwt.issuer:vehicle-recycle-system}")

@@ -11,7 +11,7 @@ const templates = ref<number>(0)
 async function refresh() {
   loading.value = true
   try {
-    const v = await searchVehicles('', 0, 1)
+    const v = await searchVehicles({ q: '', page: 0, size: 1 })
     vehicles.value = v.totalElements
     const p = await listMaterialPrices()
     prices.value = p.length

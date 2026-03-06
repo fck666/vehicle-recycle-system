@@ -8,12 +8,15 @@ export interface Page<T> {
 
 export interface VehicleModel {
   id: number
+  sourceType: 'CRAWLED' | 'MANUAL' | 'EDITED'
+  sourceSite?: string | null
   brand: string
   model: string
   modelYear: number
   fuelType: string
   vehicleType: string
   curbWeight: number
+  grossWeight?: number | null
   batteryKwh?: number | null
   productId?: string | null
   productNo?: string | null
@@ -48,6 +51,7 @@ export interface VehicleUpsertRequest {
   fuelType?: string
   vehicleType?: string
   curbWeight?: number
+  grossWeight?: number | null
   batteryKwh?: number | null
   productId?: string | null
   productNo?: string | null

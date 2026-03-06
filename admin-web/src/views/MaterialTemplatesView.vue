@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { MaterialTemplate } from '../api/types'
 import { deleteMaterialTemplate, listMaterialTemplates, upsertMaterialTemplate } from '../api/material'
@@ -15,6 +16,9 @@ const form = reactive<{
   copperRatio: number | null
   recoveryRatio: number | null
 }>({ vehicleType: '', steelRatio: null, aluminumRatio: null, copperRatio: null, recoveryRatio: null })
+
+const auth = useAuthStore()
+const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERATOR'].includes(r)))
 
 async function load() {
   loading.value = true
@@ -82,7 +86,7 @@ load()
         <div>估值方式（材料配比模板）</div>
         <div style="display:flex;gap:8px;">
           <el-button :loading="loading" @click="load">刷新</el-button>
-          <el-button type="primary" @click="openCreate">新增模板</el-button>
+          <el-button v-if="canEdit" type="primary" @click="openCreate">新增模板</el-button>
         </div>
       </div>
     </template>
@@ -95,8 +99,8 @@ load()
       <el-table-column prop="recoveryRatio" label="回收系数" width="120" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="onDelete(row)">删除</el-button>
+          <el-button v-if="canEdit" size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canEdit" size="small" type="danger" @click="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

@@ -5,7 +5,8 @@ import type { JobRun } from './jobRuns'
 export interface MiitCpJobCreateRequest {
   pcFrom: number
   pcTo: number
-  qymc?: string | null
+  cpsb?: string | null
+  qymcList?: string[] | null
   clxh?: string | null
   clmc?: string | null
   cpsbList?: string[] | null
@@ -28,4 +29,3 @@ export async function listMiitCpJobs(page: number, size: number): Promise<Page<J
 export async function getMiitCpJob(runId: string): Promise<JobRun> {
   return requestJson<JobRun>('GET', `/api/admin/miit-cp-jobs/${encodeURIComponent(runId)}`)
 }
-

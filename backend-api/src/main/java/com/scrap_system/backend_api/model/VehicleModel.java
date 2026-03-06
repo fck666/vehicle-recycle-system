@@ -1,9 +1,13 @@
 package com.scrap_system.backend_api.model;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.scrap_system.backend_api.model.enums.VehicleSourceType;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -12,12 +16,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Data
 @Table(name = "vehicle_model")
+@Getter
+@Setter
 public class VehicleModel {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // Source Info
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", length = 20, nullable = false)
+    private VehicleSourceType sourceType = VehicleSourceType.MANUAL;
 
     @Column(nullable = false, length = 64)
     private String brand;

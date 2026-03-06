@@ -39,11 +39,11 @@ spring:
 
 aliyun:
   oss:
-    endpoint: ${OSS_ENDPOINT}
-    access-key-id: ${OSS_ACCESS_KEY_ID}
-    access-key-secret: ${OSS_ACCESS_KEY_SECRET}
-    bucket-name: ${OSS_BUCKET_NAME}
-    domain: ${OSS_DOMAIN:} # Optional CDN domain
+    endpoint: oss-cn-beijing.aliyuncs.com
+    access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
+    bucket-name: xhy-car-files
+    domain: https://xhy-car-files.oss-cn-beijing.aliyuncs.com
 
 jwt:
   secret: ${JWT_SECRET}

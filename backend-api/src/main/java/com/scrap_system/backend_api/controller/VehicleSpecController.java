@@ -5,6 +5,7 @@ import com.scrap_system.backend_api.dto.VehicleSpecBatchUpsertRequest;
 import com.scrap_system.backend_api.dto.VehicleSpecUpsertItem;
 import com.scrap_system.backend_api.model.JobRun;
 import com.scrap_system.backend_api.model.VehicleModel;
+import com.scrap_system.backend_api.model.enums.VehicleSourceType;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import com.scrap_system.backend_api.service.JobRunService;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +63,9 @@ public class VehicleSpecController {
 
                 boolean isInsert = existing.isEmpty();
                 VehicleModel model = existing.orElseGet(VehicleModel::new);
+                if (isInsert || model.getSourceType() == null) {
+                    model.setSourceType(VehicleSourceType.CRAWLED);
+                }
 
                 applyDefaults(model, item, productId, productNo);
                 applyNonNull(model, item);

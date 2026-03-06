@@ -2,15 +2,18 @@ package com.scrap_system.backend_api.controller;
 
 import com.scrap_system.backend_api.dto.VehicleUpsertRequest;
 import com.scrap_system.backend_api.model.VehicleModel;
+import com.scrap_system.backend_api.model.enums.VehicleSourceType;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 @RestController
@@ -42,14 +45,22 @@ public class AdminVehicleController {
     @GetMapping
     public ResponseEntity<Page<VehicleModel>> search(
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) List<String> brands,
+            @RequestParam(required = false) List<String> manufacturers,
+            @RequestParam(required = false) List<String> vehicleTypes,
+            @RequestParam(required = false) List<String> fuelTypes,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 200);
         PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
-        String query = isBlank(q) ? null : q.trim();
-        return ResponseEntity.ok(vehicleModelRepository.search(query, pageable));
+
+        Specification<VehicleModel> spec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
+                q, brands, manufacturers, vehicleTypes, fuelTypes, null
+        );
+
+        return ResponseEntity.ok(vehicleModelRepository.findAll(spec, pageable));
     }
 
     @GetMapping("/{id}")
@@ -111,6 +122,17 @@ public class AdminVehicleController {
     }
 
     private static void apply(VehicleModel v, VehicleUpsertRequest r, boolean isCreate) {
+        if (r.getSourceType() != null) {
+            v.setSourceType(r.getSourceType());
+        } else if (isCreate) {
+            v.setSourceType(VehicleSourceType.MANUAL);
+        } else {
+            // Updating existing record: if it was CRAWLED, mark as EDITED
+            if (v.getSourceType() == VehicleSourceType.CRAWLED) {
+                v.setSourceType(VehicleSourceType.EDITED);
+            }
+        }
+
         if (!isBlank(r.getBrand()) || isCreate) v.setBrand(trimOrNull(r.getBrand()));
         if (!isBlank(r.getModel()) || isCreate) v.setModel(trimOrNull(r.getModel()));
         if (r.getModelYear() != null || isCreate) v.setModelYear(r.getModelYear());
