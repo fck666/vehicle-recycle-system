@@ -587,35 +587,56 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
     mapping: dict[str, str] = {}
     base = backend.rstrip("/")
     for i, u in enumerate(img_urls):
-        try:
-            resp = context.request.get(u, timeout=60_000)
-            if not resp.ok:
-                continue
-            body = resp.body()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
-                f.write(body)
-                tmp_path = f.name
+        retry_download = 0
+        while retry_download < 3:
             try:
-                with open(tmp_path, "rb") as fp:
-                    files = {"file": (f"miit_{it.pc}_{it.cpid}_{i}.jpg", fp, "image/jpeg")}
-                    r = session.post(
-                        f"{base}/api/admin/vehicles/{vehicle_id}/images",
-                        files=files,
-                        data={"name": f"miit_{it.pc}_{it.cpid}_{i}", "sort": str(i)},
-                        timeout=60,
-                    )
-                    r.raise_for_status()
-                    data = r.json()
-                    if isinstance(data, dict) and data.get("imageUrl"):
-                        mapping[u] = data["imageUrl"]
-                        uploaded += 1
-            finally:
+                # Add headers to mimic browser request
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": "https://service.miit-eidc.org.cn/"
+                }
+                resp = context.request.get(u, timeout=60_000, headers=headers)
+                if not resp.ok:
+                    log("miit.cp.image.download.failed", url=u, status=resp.status, attempt=retry_download + 1)
+                    retry_download += 1
+                    time.sleep(1)
+                    continue
+                    
+                body = resp.body()
+                if not body or len(body) < 100: # Basic size check
+                     log("miit.cp.image.download.empty", url=u, size=len(body) if body else 0, attempt=retry_download + 1)
+                     retry_download += 1
+                     time.sleep(1)
+                     continue
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
+                    f.write(body)
+                    tmp_path = f.name
                 try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
-        except Exception:
-            continue
+                    with open(tmp_path, "rb") as fp:
+                        files = {"file": (f"miit_{it.pc}_{it.cpid}_{i}.jpg", fp, "image/jpeg")}
+                        r = session.post(
+                            f"{base}/api/admin/vehicles/{vehicle_id}/images",
+                            files=files,
+                            data={"name": f"miit_{it.pc}_{it.cpid}_{i}", "sort": str(i)},
+                            timeout=60,
+                        )
+                        r.raise_for_status()
+                        data = r.json()
+                        if isinstance(data, dict) and data.get("imageUrl"):
+                            mapping[u] = data["imageUrl"]
+                            uploaded += 1
+                            break # Success, break retry loop
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+            except Exception as e:
+                log("miit.cp.image.download.error", url=u, err=str(e), attempt=retry_download + 1)
+                retry_download += 1
+                time.sleep(1)
+                continue
     return uploaded, mapping
 
 

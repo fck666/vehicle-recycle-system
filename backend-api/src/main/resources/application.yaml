@@ -8,8 +8,8 @@ spring:
     open-in-view: true
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 20MB
+      max-request-size: 20MB
   sql:
     init:
       mode: always # 始终尝试初始化，具体脚本由 profile 决定是否覆盖

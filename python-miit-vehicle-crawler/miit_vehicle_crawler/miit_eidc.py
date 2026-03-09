@@ -136,11 +136,17 @@ def parse_detail_html(html: str, detail_url: str) -> tuple[dict[str, str], list[
     # The caller logic should handle empty images gracefully.
     img_tags = soup.find_all("img")
     for img in img_tags:
+        # Check src first
         src = img.get("src")
+        # Some sites use data-src or original for lazy loading
+        if not src:
+            src = img.get("data-src") or img.get("original")
+            
         if src and "getPic" in src and ("gid=" in src or "pc=" in src):
             # Handle potential relative URLs
             imgs.append(requests.compat.urljoin(detail_url, src))
             
+    # Remove duplicates while preserving order
     imgs = list(dict.fromkeys(imgs))
     return field_map, imgs
 
