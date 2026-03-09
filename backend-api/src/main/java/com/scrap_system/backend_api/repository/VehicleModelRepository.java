@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -27,4 +28,16 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
                or lower(coalesce(v.productNo, '')) like concat('%', lower(:q), '%')
             """)
     Page<VehicleModel> search(@Param("q") String q, Pageable pageable);
+
+    @Query("select distinct v.vehicleType from VehicleModel v where v.vehicleType is not null and trim(v.vehicleType) <> '' order by v.vehicleType asc")
+    List<String> findDistinctVehicleTypes();
+
+    @Query("select distinct v.brand from VehicleModel v where v.brand is not null and trim(v.brand) <> '' order by v.brand asc")
+    List<String> findDistinctBrands();
+
+    @Query("select distinct v.manufacturerName from VehicleModel v where v.manufacturerName is not null and trim(v.manufacturerName) <> '' order by v.manufacturerName asc")
+    List<String> findDistinctManufacturers();
+
+    @Query("select distinct v.fuelType from VehicleModel v where v.fuelType is not null and trim(v.fuelType) <> '' order by v.fuelType asc")
+    List<String> findDistinctFuelTypes();
 }

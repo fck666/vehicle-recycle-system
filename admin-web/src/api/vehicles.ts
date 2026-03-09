@@ -12,6 +12,13 @@ export interface VehicleSearchParams {
   size?: number
 }
 
+export interface VehicleFacets {
+  brands: string[]
+  manufacturers: string[]
+  vehicleTypes: string[]
+  fuelTypes: string[]
+}
+
 export async function searchVehicles(params: VehicleSearchParams): Promise<Page<VehicleModel>> {
   const query = new URLSearchParams()
   if (params.q) query.append('q', params.q)
@@ -41,4 +48,8 @@ export async function updateVehicle(id: number, req: VehicleUpsertRequest): Prom
 
 export async function deleteVehicle(id: number): Promise<void> {
   await requestJson('DELETE', `/api/admin/vehicles/${id}`)
+}
+
+export async function getVehicleFacets(): Promise<VehicleFacets> {
+  return requestJson<VehicleFacets>('GET', '/api/admin/vehicles/facets')
 }

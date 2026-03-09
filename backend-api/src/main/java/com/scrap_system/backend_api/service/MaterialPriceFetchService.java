@@ -1,7 +1,10 @@
 package com.scrap_system.backend_api.service;
 
+import com.scrap_system.backend_api.dto.MaterialSourceSuggestResult;
 import com.scrap_system.backend_api.model.MaterialPrice;
+import com.scrap_system.backend_api.model.MaterialSourceConfig;
 import com.scrap_system.backend_api.repository.MaterialPriceRepository;
+import com.scrap_system.backend_api.repository.MaterialSourceConfigRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,8 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -28,6 +33,7 @@ import java.util.regex.Pattern;
 public class MaterialPriceFetchService {
 
     private final MaterialPriceRepository materialPriceRepository;
+    private final MaterialSourceConfigRepository materialSourceConfigRepository;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -36,21 +42,22 @@ public class MaterialPriceFetchService {
     private static final String CURRENCY = "CNY";
     private static final String UNIT = "CNY/TON";
 
-    private static final List<Source> SOURCES = List.of(
-            new Source("steel", "生意社-螺纹钢", "https://hrb.100ppi.com/", Pattern.compile("螺纹钢参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})", Pattern.DOTALL)),
-            new Source("aluminum", "生意社-铝", "https://al.100ppi.com/", Pattern.compile("铝参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})", Pattern.DOTALL)),
-            new Source("copper", "生意社-铜", "https://cu.100ppi.com/", Pattern.compile("铜参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})", Pattern.DOTALL)),
-            new Source("battery", "生意社-碳酸锂(电池级)", "https://tsl.100ppi.com/", Pattern.compile("碳酸锂-电池级参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})", Pattern.DOTALL)),
-            new Source("plastic", "生意社-PP(拉丝)", "https://pp.100ppi.com/", Pattern.compile("PP\\(拉丝\\)参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})", Pattern.DOTALL)),
-            new Source("rubber", "生意社-天然橡胶", "https://nr.100ppi.com/", Pattern.compile("天然橡胶参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})", Pattern.DOTALL))
+    private static final List<SourceSeed> DEFAULT_SOURCES = List.of(
+            new SourceSeed("steel", "螺纹钢", "https://hrb.100ppi.com/"),
+            new SourceSeed("aluminum", "铝", "https://al.100ppi.com/"),
+            new SourceSeed("copper", "铜", "https://cu.100ppi.com/"),
+            new SourceSeed("battery", "碳酸锂-电池级", "https://tsl.100ppi.com/"),
+            new SourceSeed("plastic", "PP(拉丝)", "https://pp.100ppi.com/"),
+            new SourceSeed("rubber", "天然橡胶", "https://nr.100ppi.com/")
     );
 
     public FetchResult fetchAndUpsertAll() {
+        ensureDefaultSources();
         int updated = 0;
         int inserted = 0;
         int failed = 0;
 
-        for (Source source : SOURCES) {
+        for (Source source : listEnabledSources()) {
             try {
                 Fetched f = fetchOne(source);
                 boolean isInsert = upsert(source, f);
@@ -63,6 +70,75 @@ public class MaterialPriceFetchService {
         }
 
         return new FetchResult(inserted, updated, failed);
+    }
+
+    public List<MaterialSourceConfig> listSources() {
+        ensureDefaultSources();
+        return materialSourceConfigRepository.findAll().stream()
+                .sorted(Comparator.comparing(MaterialSourceConfig::getType))
+                .toList();
+    }
+
+    public MaterialSourceConfig upsertSource(MaterialSourceConfig input) {
+        ensureDefaultSources();
+        String type = input.getType().trim().toLowerCase(Locale.ROOT);
+        MaterialSourceConfig source = materialSourceConfigRepository.findByType(type).orElseGet(MaterialSourceConfig::new);
+        source.setType(type);
+        source.setDisplayName(input.getDisplayName());
+        source.setSourceName(input.getSourceName());
+        source.setSourceUrl(input.getSourceUrl());
+        source.setParseKeyword(input.getParseKeyword());
+        source.setEnabled(Boolean.TRUE.equals(input.getEnabled()));
+        return materialSourceConfigRepository.save(source);
+    }
+
+    public List<MaterialSourceSuggestResult> suggestFromKeyword(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) return List.of();
+        String q = keyword.trim();
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.100ppi.com/sf/search.aspx?keyword=" + encode(q)))
+                    .GET()
+                    .header("User-Agent", "vehicle-recycle-system/backend-api")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    .build();
+            HttpResponse<byte[]> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                return List.of();
+            }
+            Charset charset = charsetFrom(resp.headers().firstValue("content-type").orElse(null));
+            String body = new String(resp.body(), charset);
+            Pattern p = Pattern.compile("<a[^>]+href=[\"'](https?://([a-z0-9]+)\\.100ppi\\.com/)[\"'][^>]*>([^<]{1,64})</a>", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = p.matcher(body);
+            List<MaterialSourceSuggestResult> results = new ArrayList<>();
+            while (matcher.find()) {
+                String url = matcher.group(1);
+                String type = matcher.group(2).toLowerCase(Locale.ROOT);
+                String text = normalizeText(matcher.group(3));
+                if (text.isBlank()) continue;
+                results.add(MaterialSourceSuggestResult.builder()
+                        .type(type)
+                        .displayName(text)
+                        .sourceName("生意社-" + text)
+                        .sourceUrl(url)
+                        .parseKeyword(text)
+                        .build());
+            }
+            return results.stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            r -> r.getType() + "|" + r.getDisplayName(),
+                            r -> r,
+                            (a, b) -> a
+                    ))
+                    .values()
+                    .stream()
+                    .sorted(Comparator.comparing(MaterialSourceSuggestResult::getDisplayName))
+                    .limit(30)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("material source suggest failed: keyword={}", q, e);
+            return List.of();
+        }
     }
 
     private Fetched fetchOne(Source source) throws Exception {
@@ -111,6 +187,36 @@ public class MaterialPriceFetchService {
         return existing.isEmpty();
     }
 
+    private List<Source> listEnabledSources() {
+        return materialSourceConfigRepository.findByEnabledTrueOrderByTypeAsc().stream()
+                .map(this::fromConfig)
+                .toList();
+    }
+
+    private Source fromConfig(MaterialSourceConfig c) {
+        String keyword = c.getParseKeyword();
+        if (keyword == null || keyword.isBlank()) {
+            keyword = c.getDisplayName();
+        }
+        String regex = Pattern.quote(keyword.trim()) + "\\s*参考价为\\s*([0-9.]+).*?(\\d{4}-\\d{2}-\\d{2})";
+        return new Source(c.getType(), c.getSourceName(), c.getSourceUrl(), Pattern.compile(regex, Pattern.DOTALL));
+    }
+
+    private void ensureDefaultSources() {
+        for (SourceSeed seed : DEFAULT_SOURCES) {
+            Optional<MaterialSourceConfig> existing = materialSourceConfigRepository.findByType(seed.type());
+            if (existing.isPresent()) continue;
+            MaterialSourceConfig c = new MaterialSourceConfig();
+            c.setType(seed.type());
+            c.setDisplayName(seed.displayName());
+            c.setSourceName("生意社-" + seed.displayName());
+            c.setSourceUrl(seed.url());
+            c.setParseKeyword(seed.displayName());
+            c.setEnabled(true);
+            materialSourceConfigRepository.save(c);
+        }
+    }
+
     private static String buildRawPayload(Source source, Fetched fetched) {
         return "{\"sourceName\":\"" + jsonEscape(source.sourceName()) + "\"," +
                 "\"sourceUrl\":\"" + jsonEscape(source.url()) + "\"," +
@@ -145,7 +251,19 @@ public class MaterialPriceFetchService {
         }
     }
 
+    private static String normalizeText(String text) {
+        if (text == null) return "";
+        return text.replace("&nbsp;", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private static String encode(String s) {
+        return java.net.URLEncoder.encode(s, StandardCharsets.UTF_8);
+    }
+
     private record Source(String type, String sourceName, String url, Pattern pattern) {
+    }
+
+    private record SourceSeed(String type, String displayName, String url) {
     }
 
     private record Fetched(BigDecimal pricePerTon, BigDecimal pricePerKg, LocalDate effectiveDate, LocalDateTime fetchedAt) {

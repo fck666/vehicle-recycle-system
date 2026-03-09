@@ -31,6 +31,9 @@ public class ValuationRecord {
     @Column(name = "battery_value", nullable = false, precision = 12, scale = 2)
     private BigDecimal batteryValue;
 
+    @Column(name = "details_json", columnDefinition = "LONGTEXT")
+    private String detailsJson;
+
     @Column(name = "created_time", insertable = false, updatable = false)
     private LocalDateTime createdTime;
 

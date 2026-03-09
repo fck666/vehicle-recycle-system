@@ -1,57 +1,98 @@
 package com.scrap_system.backend_api.controller;
 
 import com.scrap_system.backend_api.dto.MaterialTemplateUpsertRequest;
+import com.scrap_system.backend_api.dto.MaterialRatioItem;
+import com.scrap_system.backend_api.dto.MaterialTemplateDto;
 import com.scrap_system.backend_api.model.MaterialTemplate;
+import com.scrap_system.backend_api.model.MaterialTemplateItem;
+import com.scrap_system.backend_api.repository.MaterialTemplateItemRepository;
 import com.scrap_system.backend_api.repository.MaterialTemplateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/material-templates")
 @RequiredArgsConstructor
 public class MaterialTemplateController {
+    private static final String OTHERS = "others";
 
     private final MaterialTemplateRepository materialTemplateRepository;
+    private final MaterialTemplateItemRepository materialTemplateItemRepository;
 
     @GetMapping
-    public List<MaterialTemplate> list() {
-        return materialTemplateRepository.findAll();
+    public List<MaterialTemplateDto> list() {
+        List<MaterialTemplate> templates = materialTemplateRepository.findAll().stream()
+                .sorted(Comparator.comparing(MaterialTemplate::getVehicleType, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        Map<Long, List<MaterialTemplateItem>> grouped = loadItems(templates);
+        return templates.stream().map(t -> toDto(t, grouped.getOrDefault(t.getId(), List.of()))).toList();
     }
 
     @GetMapping("/{vehicleType}")
-    public ResponseEntity<MaterialTemplate> getByVehicleType(@PathVariable String vehicleType) {
+    public ResponseEntity<MaterialTemplateDto> getByVehicleType(@PathVariable String vehicleType) {
         return materialTemplateRepository.findByVehicleType(vehicleType)
-                .map(ResponseEntity::ok)
+                .map(t -> {
+                    List<MaterialTemplateItem> items = materialTemplateItemRepository.findByTemplateIdOrderByIdAsc(t.getId());
+                    return ResponseEntity.ok(toDto(t, items));
+                })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public ResponseEntity<MaterialTemplate> upsert(@RequestBody MaterialTemplateUpsertRequest request) {
+    @Transactional
+    public ResponseEntity<MaterialTemplateDto> upsert(@RequestBody MaterialTemplateUpsertRequest request) {
         if (request == null || isBlank(request.getVehicleType())) {
             return ResponseEntity.badRequest().build();
         }
-        if (request.getSteelRatio() == null || request.getAluminumRatio() == null || request.getCopperRatio() == null || request.getRecoveryRatio() == null) {
+        if (request.getRecoveryRatio() == null || request.getMaterials() == null || request.getMaterials().isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-
+        List<MaterialRatioItem> normalizedItems = applyOthersRule(normalize(request.getMaterials()));
+        if (normalizedItems.isEmpty()) return ResponseEntity.badRequest().build();
+        BigDecimal sum = normalizedItems.stream()
+                .map(MaterialRatioItem::getRatio)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (sum.compareTo(BigDecimal.ZERO) <= 0 || sum.compareTo(BigDecimal.ONE) > 0) {
+            return ResponseEntity.badRequest().build();
+        }
         String vehicleType = request.getVehicleType().trim();
         Optional<MaterialTemplate> existing = materialTemplateRepository.findByVehicleType(vehicleType);
         MaterialTemplate t = existing.orElseGet(MaterialTemplate::new);
         t.setVehicleType(vehicleType);
-        t.setSteelRatio(request.getSteelRatio());
-        t.setAluminumRatio(request.getAluminumRatio());
-        t.setCopperRatio(request.getCopperRatio());
+        t.setSteelRatio(findRatio(normalizedItems, "steel"));
+        t.setAluminumRatio(findRatio(normalizedItems, "aluminum"));
+        t.setCopperRatio(findRatio(normalizedItems, "copper"));
         t.setRecoveryRatio(request.getRecoveryRatio());
 
         MaterialTemplate saved = materialTemplateRepository.save(t);
-        return ResponseEntity.ok(saved);
+        materialTemplateItemRepository.deleteByTemplateId(saved.getId());
+        List<MaterialTemplateItem> toSave = new ArrayList<>();
+        for (MaterialRatioItem item : normalizedItems) {
+            MaterialTemplateItem tItem = new MaterialTemplateItem();
+            tItem.setTemplateId(saved.getId());
+            tItem.setMaterialType(item.getMaterialType());
+            tItem.setRatio(item.getRatio());
+            toSave.add(tItem);
+        }
+        materialTemplateItemRepository.saveAll(toSave);
+        return ResponseEntity.ok(toDto(saved, materialTemplateItemRepository.findByTemplateIdOrderByIdAsc(saved.getId())));
     }
 
     @DeleteMapping("/{vehicleType}")
+    @Transactional
     public ResponseEntity<Void> deleteByVehicleType(@PathVariable String vehicleType) {
         Optional<MaterialTemplate> existing = materialTemplateRepository.findByVehicleType(vehicleType);
         if (existing.isEmpty()) {
@@ -64,5 +105,87 @@ public class MaterialTemplateController {
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
     }
-}
 
+    private static List<MaterialRatioItem> normalize(List<MaterialRatioItem> materials) {
+        Map<String, BigDecimal> merged = new HashMap<>();
+        for (MaterialRatioItem item : materials) {
+            if (item == null || isBlank(item.getMaterialType()) || item.getRatio() == null || item.getRatio().compareTo(BigDecimal.ZERO) < 0) {
+                continue;
+            }
+            String type = normalizeType(item.getMaterialType());
+            merged.put(type, item.getRatio());
+        }
+        return merged.entrySet().stream()
+                .map(e -> {
+                    MaterialRatioItem i = new MaterialRatioItem();
+                    i.setMaterialType(e.getKey());
+                    i.setRatio(e.getValue().setScale(4, RoundingMode.HALF_UP));
+                    return i;
+                })
+                .sorted(Comparator.comparing(MaterialRatioItem::getMaterialType))
+                .toList();
+    }
+
+    private static List<MaterialRatioItem> applyOthersRule(List<MaterialRatioItem> items) {
+        if (items.isEmpty()) return items;
+        BigDecimal nonOthersSum = items.stream()
+                .filter(i -> !OTHERS.equals(i.getMaterialType()))
+                .map(MaterialRatioItem::getRatio)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (nonOthersSum.compareTo(BigDecimal.ONE) > 0) return List.of();
+        boolean hasOthers = items.stream().anyMatch(i -> OTHERS.equals(i.getMaterialType()));
+        if (!hasOthers) return items;
+        BigDecimal othersRatio = BigDecimal.ONE.subtract(nonOthersSum).setScale(4, RoundingMode.HALF_UP);
+        List<MaterialRatioItem> adjusted = new ArrayList<>();
+        adjusted.addAll(items.stream().filter(i -> !OTHERS.equals(i.getMaterialType())).toList());
+        if (othersRatio.compareTo(BigDecimal.ZERO) > 0) {
+            MaterialRatioItem o = new MaterialRatioItem();
+            o.setMaterialType(OTHERS);
+            o.setRatio(othersRatio);
+            adjusted.add(o);
+        }
+        return adjusted.stream().sorted(Comparator.comparing(MaterialRatioItem::getMaterialType)).toList();
+    }
+
+    private static String normalizeType(String rawType) {
+        String t = rawType.trim().toLowerCase(Locale.ROOT);
+        if ("other".equals(t) || "others".equals(t) || "其它".equals(t) || "其他".equals(t) || "其余".equals(t)) {
+            return OTHERS;
+        }
+        return t;
+    }
+
+    private static BigDecimal findRatio(List<MaterialRatioItem> items, String type) {
+        return items.stream()
+                .filter(i -> type.equals(i.getMaterialType()))
+                .findFirst()
+                .map(MaterialRatioItem::getRatio)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    private Map<Long, List<MaterialTemplateItem>> loadItems(List<MaterialTemplate> templates) {
+        if (templates.isEmpty()) return Map.of();
+        List<Long> ids = templates.stream().map(MaterialTemplate::getId).toList();
+        return materialTemplateItemRepository.findByTemplateIdIn(ids).stream()
+                .collect(Collectors.groupingBy(MaterialTemplateItem::getTemplateId));
+    }
+
+    private static MaterialTemplateDto toDto(MaterialTemplate t, List<MaterialTemplateItem> items) {
+        List<MaterialRatioItem> materials = items.stream()
+                .sorted(Comparator.comparing(MaterialTemplateItem::getMaterialType))
+                .map(i -> {
+                    MaterialRatioItem r = new MaterialRatioItem();
+                    r.setMaterialType(i.getMaterialType());
+                    r.setRatio(i.getRatio());
+                    return r;
+                })
+                .toList();
+        return MaterialTemplateDto.builder()
+                .id(t.getId())
+                .vehicleType(t.getVehicleType())
+                .recoveryRatio(t.getRecoveryRatio())
+                .createdAt(t.getCreatedAt())
+                .materials(materials)
+                .build();
+    }
+}

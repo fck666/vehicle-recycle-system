@@ -1,5 +1,5 @@
 import { requestJson } from './client'
-import type { MaterialPrice, MaterialTemplate } from './types'
+import type { MaterialPrice, MaterialRatioItem, MaterialSourceConfig, MaterialSourceSuggestResult, MaterialTemplate } from './types'
 
 export async function listMaterialPrices(): Promise<MaterialPrice[]> {
   return requestJson<MaterialPrice[]>('GET', '/api/material-prices')
@@ -22,14 +22,33 @@ export async function listMaterialTemplates(): Promise<MaterialTemplate[]> {
 
 export async function upsertMaterialTemplate(payload: {
   vehicleType: string
-  steelRatio: number
-  aluminumRatio: number
-  copperRatio: number
   recoveryRatio: number
+  materials: MaterialRatioItem[]
 }): Promise<MaterialTemplate> {
   return requestJson<MaterialTemplate>('POST', '/api/material-templates', payload)
 }
 
 export async function deleteMaterialTemplate(vehicleType: string): Promise<void> {
   await requestJson('DELETE', `/api/material-templates/${encodeURIComponent(vehicleType)}`)
+}
+
+export async function listMaterialSources(): Promise<MaterialSourceConfig[]> {
+  return requestJson<MaterialSourceConfig[]>('GET', '/api/material-sources')
+}
+
+export async function suggestMaterialSources(keyword: string): Promise<MaterialSourceSuggestResult[]> {
+  const params = new URLSearchParams()
+  params.set('keyword', keyword)
+  return requestJson<MaterialSourceSuggestResult[]>('GET', `/api/material-sources/suggest?${params.toString()}`)
+}
+
+export async function upsertMaterialSource(payload: {
+  type: string
+  displayName: string
+  sourceName?: string
+  sourceUrl: string
+  parseKeyword?: string
+  enabled?: boolean
+}): Promise<MaterialSourceConfig> {
+  return requestJson<MaterialSourceConfig>('POST', '/api/material-sources', payload)
 }

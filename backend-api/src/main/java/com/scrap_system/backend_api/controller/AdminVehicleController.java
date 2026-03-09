@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 
@@ -61,6 +62,16 @@ public class AdminVehicleController {
         );
 
         return ResponseEntity.ok(vehicleModelRepository.findAll(spec, pageable));
+    }
+
+    @GetMapping("/facets")
+    public ResponseEntity<Map<String, List<String>>> facets() {
+        return ResponseEntity.ok(Map.of(
+                "brands", vehicleModelRepository.findDistinctBrands(),
+                "manufacturers", vehicleModelRepository.findDistinctManufacturers(),
+                "vehicleTypes", vehicleModelRepository.findDistinctVehicleTypes(),
+                "fuelTypes", vehicleModelRepository.findDistinctFuelTypes()
+        ));
     }
 
     @GetMapping("/{id}")

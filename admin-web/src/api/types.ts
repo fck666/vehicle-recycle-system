@@ -73,9 +73,30 @@ export interface MaterialPrice {
 export interface MaterialTemplate {
   id: number
   vehicleType: string
-  steelRatio: number
-  aluminumRatio: number
-  copperRatio: number
   recoveryRatio: number
+  materials: MaterialRatioItem[]
   createdAt?: string | null
+}
+
+export interface MaterialRatioItem {
+  materialType: string
+  ratio: number
+}
+
+export interface MaterialSourceConfig {
+  id: number
+  type: string
+  displayName: string
+  sourceName: string
+  sourceUrl: string
+  parseKeyword: string
+  enabled: boolean
+}
+
+export interface MaterialSourceSuggestResult {
+  type: string
+  displayName: string
+  sourceName: string
+  sourceUrl: string
+  parseKeyword: string
 }

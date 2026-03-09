@@ -59,7 +59,19 @@ CREATE TABLE IF NOT EXISTS material_template (
   aluminum_ratio DECIMAL(5,4) NOT NULL,
   copper_ratio DECIMAL(5,4) NOT NULL,
   recovery_ratio DECIMAL(5,4) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_material_template_vehicle_type (vehicle_type)
+);
+
+CREATE TABLE IF NOT EXISTS material_template_item (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  template_id BIGINT NOT NULL,
+  material_type VARCHAR(32) NOT NULL,
+  ratio DECIMAL(5,4) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_material_template_item (template_id, material_type),
+  INDEX idx_material_template_item_tid (template_id),
+  FOREIGN KEY (template_id) REFERENCES material_template(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS material_price (
@@ -78,6 +90,20 @@ CREATE TABLE IF NOT EXISTS material_price (
   INDEX idx_material_price_type_date (type, effective_date)
 );
 
+CREATE TABLE IF NOT EXISTS material_source_config (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  type VARCHAR(32) NOT NULL,
+  display_name VARCHAR(64) NOT NULL,
+  source_name VARCHAR(64) NOT NULL,
+  source_url VARCHAR(512) NOT NULL,
+  parse_keyword VARCHAR(64) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_material_source_type (type),
+  INDEX idx_material_source_enabled (enabled)
+);
+
 CREATE TABLE IF NOT EXISTS valuation_record (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   vehicle_id BIGINT NOT NULL,
@@ -86,6 +112,7 @@ CREATE TABLE IF NOT EXISTS valuation_record (
   aluminum_value DECIMAL(12,2) NOT NULL,
   copper_value DECIMAL(12,2) NOT NULL,
   battery_value DECIMAL(12,2) NOT NULL,
+  details_json LONGTEXT,
   created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -227,3 +254,5 @@ CREATE TABLE IF NOT EXISTS job_run (
   INDEX idx_job_run_type_time (job_type, started_at),
   INDEX idx_job_run_run_id (run_id)
 );
+
+ALTER TABLE valuation_record ADD COLUMN IF NOT EXISTS details_json LONGTEXT;

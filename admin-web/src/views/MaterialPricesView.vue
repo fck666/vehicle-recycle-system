@@ -2,11 +2,12 @@
 import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
-import type { MaterialPrice } from '../api/types'
-import { getMaterialPriceHistory, listMaterialPrices, upsertMaterialPrice } from '../api/material'
+import type { MaterialPrice, MaterialSourceConfig, MaterialSourceSuggestResult } from '../api/types'
+import { getMaterialPriceHistory, listMaterialPrices, listMaterialSources, suggestMaterialSources, upsertMaterialPrice, upsertMaterialSource } from '../api/material'
 
 const loading = ref(false)
 const items = ref<MaterialPrice[]>([])
+const sourceItems = ref<MaterialSourceConfig[]>([])
 
 const dialogVisible = ref(false)
 const form = reactive<{ type: string; pricePerKg: number | null; effectiveDate: string }>({ type: '', pricePerKg: null, effectiveDate: '' })
@@ -17,6 +18,9 @@ const historyType = ref('')
 const historyFrom = ref('')
 const historyTo = ref('')
 const historyItems = ref<MaterialPrice[]>([])
+const suggestKeyword = ref('')
+const suggestLoading = ref(false)
+const suggestItems = ref<MaterialSourceSuggestResult[]>([])
 
 const auth = useAuthStore()
 const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERATOR'].includes(r)))
@@ -24,7 +28,9 @@ const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERA
 async function load() {
   loading.value = true
   try {
-    items.value = await listMaterialPrices()
+    const [prices, sources] = await Promise.all([listMaterialPrices(), listMaterialSources()])
+    items.value = prices
+    sourceItems.value = sources
   } finally {
     loading.value = false
   }
@@ -85,6 +91,43 @@ async function reloadHistory() {
   }
 }
 
+async function runSuggest() {
+  if (!suggestKeyword.value.trim()) return
+  suggestLoading.value = true
+  try {
+    suggestItems.value = await suggestMaterialSources(suggestKeyword.value.trim())
+    if (!suggestItems.value.length) ElMessage.warning('未检索到候选材料')
+  } finally {
+    suggestLoading.value = false
+  }
+}
+
+async function addFromSuggest(row: MaterialSourceSuggestResult) {
+  await upsertMaterialSource({
+    type: row.type,
+    displayName: row.displayName,
+    sourceName: row.sourceName,
+    sourceUrl: row.sourceUrl,
+    parseKeyword: row.parseKeyword,
+    enabled: true,
+  })
+  ElMessage.success('已添加到抓取材料')
+  load()
+}
+
+async function toggleSource(row: MaterialSourceConfig, enabled: boolean) {
+  await upsertMaterialSource({
+    type: row.type,
+    displayName: row.displayName,
+    sourceName: row.sourceName,
+    sourceUrl: row.sourceUrl,
+    parseKeyword: row.parseKeyword,
+    enabled,
+  })
+  ElMessage.success('已更新')
+  load()
+}
+
 load()
 </script>
 
@@ -112,6 +155,47 @@ load()
         <template #default="{ row }">
           <el-button v-if="canEdit" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="primary" @click="openHistory(row)">详情</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-card>
+
+  <el-card style="margin-top:12px;">
+    <template #header>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>抓取材料配置</div>
+      </div>
+    </template>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+      <el-input v-model="suggestKeyword" placeholder="输入材料中文或英文，例如：橡胶 / rubber" style="width:420px;" />
+      <el-button :loading="suggestLoading" @click="runSuggest">检索生意社候选</el-button>
+    </div>
+    <el-table :data="suggestItems" stripe style="margin-bottom:12px;">
+      <el-table-column prop="displayName" label="候选材料" min-width="180" />
+      <el-table-column prop="type" label="类型编码" width="140" />
+      <el-table-column label="来源链接" min-width="260">
+        <template #default="{ row }">
+          <el-link :href="row.sourceUrl" target="_blank" underline="never">打开</el-link>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button v-if="canEdit" type="primary" size="small" @click="addFromSuggest(row)">添加</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <el-table :data="sourceItems" stripe>
+      <el-table-column prop="displayName" label="已配置材料" min-width="180" />
+      <el-table-column prop="type" label="类型编码" width="140" />
+      <el-table-column prop="parseKeyword" label="解析关键词" min-width="160" />
+      <el-table-column label="来源链接" min-width="260">
+        <template #default="{ row }">
+          <el-link :href="row.sourceUrl" target="_blank" underline="never">打开</el-link>
+        </template>
+      </el-table-column>
+      <el-table-column label="启用" width="100">
+        <template #default="{ row }">
+          <el-switch :model-value="row.enabled" :disabled="!canEdit" @change="(v:boolean) => toggleSource(row, v)" />
         </template>
       </el-table-column>
     </el-table>
