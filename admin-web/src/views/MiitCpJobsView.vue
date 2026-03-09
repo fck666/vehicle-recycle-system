@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { JobRun } from '../api/jobRuns'
-import { createMiitCpJob, listMiitCpJobs } from '../api/miitCpJobs'
+import { createMiitCpJob, listMiitCpJobs, retryMiitCpJob } from '../api/miitCpJobs'
 import type { Page } from '../api/types'
 
 const loading = ref(false)
 const page = ref(0)
 const size = ref(20)
 const result = ref<Page<JobRun>>({ content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 })
+const detailDialogVisible = ref(false)
+const currentJob = ref<JobRun | null>(null)
+const failedItems = ref<any[]>([])
 
 const form = reactive({
   pcFrom: 398,
@@ -69,6 +72,45 @@ async function createJob() {
   } catch {
     ElMessage.error('创建失败')
   }
+}
+
+async function retryJob(runId: string) {
+  try {
+    await ElMessageBox.confirm('确定要对失败记录进行重试抓取吗？', '提示', { type: 'warning' })
+    await retryMiitCpJob(runId)
+    ElMessage.success('已创建重试任务')
+    load()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('重试失败')
+  }
+}
+
+function showDetail(row: JobRun) {
+  currentJob.value = row
+  failedItems.value = []
+  try {
+    if (row.detailsJson) {
+      const detail = JSON.parse(row.detailsJson)
+      if (detail?.progress?.result?.failed_items) {
+        failedItems.value = detail.progress.result.failed_items
+      }
+    }
+  } catch (e) {
+    console.error(e)
+  }
+  detailDialogVisible.value = true
+}
+
+function getFailedCount(row: JobRun) {
+  try {
+    if (row.detailsJson) {
+      const detail = JSON.parse(row.detailsJson)
+      return detail?.progress?.result?.failed || 0
+    }
+  } catch {
+    return 0
+  }
+  return 0
 }
 
 function onSizeChange(v: number) {
@@ -162,15 +204,27 @@ load()
           <el-tag v-else type="info">{{ formatStatus(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="计数" width="220">
+      <el-table-column label="计数" width="280">
         <template #default="{ row }">
           <span>ins: {{ row.insertedCount ?? 0 }}</span>
           <span style="margin-left:10px;">upd: {{ row.updatedCount ?? 0 }}</span>
           <span style="margin-left:10px;">skip: {{ row.skippedCount ?? 0 }}</span>
+          <span style="margin-left:10px;color:red;" v-if="getFailedCount(row) > 0">fail: {{ getFailedCount(row) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="message" label="消息" min-width="220" />
       <el-table-column prop="finishedAt" label="结束时间" width="180" />
+      <el-table-column label="操作" width="120" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="showDetail(row)">详情</el-button>
+          <el-button 
+            v-if="row.status !== 'RUNNING' && row.status !== 'PENDING' && getFailedCount(row) > 0" 
+            link 
+            type="warning" 
+            @click="retryJob(row.runId)"
+          >重试失败</el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <div style="display:flex;justify-content:flex-end;margin-top:12px;">
@@ -185,6 +239,29 @@ load()
       />
     </div>
   </el-card>
+
+  <el-dialog
+    v-model="detailDialogVisible"
+    title="任务详情"
+    width="800px"
+  >
+    <div v-if="currentJob">
+      <h3>失败记录 ({{ failedItems.length }})</h3>
+      <el-table :data="failedItems" height="400" border stripe v-if="failedItems.length">
+        <el-table-column prop="cpid" label="产品ID" width="120" />
+        <el-table-column prop="clxh" label="产品型号" width="150" />
+        <el-table-column prop="cpsb" label="商标" width="120" />
+        <el-table-column prop="pc" label="批次" width="80" />
+        <el-table-column prop="error" label="错误信息" min-width="200" show-overflow-tooltip />
+      </el-table>
+      <el-empty v-else description="无失败记录" />
+      
+      <div style="margin-top:20px;">
+        <h3>原始配置</h3>
+        <pre style="background:#f5f7fa;padding:10px;border-radius:4px;overflow:auto;">{{ JSON.stringify(JSON.parse(currentJob.detailsJson || '{}').config, null, 2) }}</pre>
+      </div>
+    </div>
+  </el-dialog>
 </template>
 
 <style scoped>

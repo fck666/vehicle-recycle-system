@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MaterialTemplateController {
     private static final String OTHERS = "others";
+    private static final String SCOPE_VEHICLE_TYPE = "VEHICLE_TYPE";
+    private static final String SCOPE_VEHICLE = "VEHICLE";
 
     private final MaterialTemplateRepository materialTemplateRepository;
     private final MaterialTemplateItemRepository materialTemplateItemRepository;
@@ -35,7 +37,9 @@ public class MaterialTemplateController {
     @GetMapping
     public List<MaterialTemplateDto> list() {
         List<MaterialTemplate> templates = materialTemplateRepository.findAll().stream()
-                .sorted(Comparator.comparing(MaterialTemplate::getVehicleType, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator
+                        .comparing(MaterialTemplate::getScopeType, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                        .thenComparing(MaterialTemplate::getScopeValue, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
                 .toList();
         Map<Long, List<MaterialTemplateItem>> grouped = loadItems(templates);
         return templates.stream().map(t -> toDto(t, grouped.getOrDefault(t.getId(), List.of()))).toList();
@@ -43,7 +47,7 @@ public class MaterialTemplateController {
 
     @GetMapping("/{vehicleType}")
     public ResponseEntity<MaterialTemplateDto> getByVehicleType(@PathVariable String vehicleType) {
-        return materialTemplateRepository.findByVehicleType(vehicleType)
+        return materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE_TYPE, vehicleType.trim())
                 .map(t -> {
                     List<MaterialTemplateItem> items = materialTemplateItemRepository.findByTemplateIdOrderByIdAsc(t.getId());
                     return ResponseEntity.ok(toDto(t, items));
@@ -54,7 +58,7 @@ public class MaterialTemplateController {
     @PostMapping
     @Transactional
     public ResponseEntity<MaterialTemplateDto> upsert(@RequestBody MaterialTemplateUpsertRequest request) {
-        if (request == null || isBlank(request.getVehicleType())) {
+        if (request == null) {
             return ResponseEntity.badRequest().build();
         }
         if (request.getRecoveryRatio() == null || request.getMaterials() == null || request.getMaterials().isEmpty()) {
@@ -68,14 +72,19 @@ public class MaterialTemplateController {
         if (sum.compareTo(BigDecimal.ZERO) <= 0 || sum.compareTo(BigDecimal.ONE) > 0) {
             return ResponseEntity.badRequest().build();
         }
-        String vehicleType = request.getVehicleType().trim();
-        Optional<MaterialTemplate> existing = materialTemplateRepository.findByVehicleType(vehicleType);
+        String scopeType = normalizeScopeType(request.getScopeType());
+        String scopeValue = normalizeScopeValue(scopeType, request);
+        if (isBlank(scopeValue)) return ResponseEntity.badRequest().build();
+        Optional<MaterialTemplate> existing = materialTemplateRepository.findByScopeTypeAndScopeValue(scopeType, scopeValue);
         MaterialTemplate t = existing.orElseGet(MaterialTemplate::new);
-        t.setVehicleType(vehicleType);
+        t.setScopeType(scopeType);
+        t.setScopeValue(scopeValue);
+        t.setVehicleType(SCOPE_VEHICLE_TYPE.equals(scopeType) ? scopeValue : null);
         t.setSteelRatio(findRatio(normalizedItems, "steel"));
         t.setAluminumRatio(findRatio(normalizedItems, "aluminum"));
         t.setCopperRatio(findRatio(normalizedItems, "copper"));
         t.setRecoveryRatio(request.getRecoveryRatio());
+        t.setOthersPricePerKgOverride(request.getOthersPricePerKgOverride());
 
         MaterialTemplate saved = materialTemplateRepository.save(t);
         materialTemplateItemRepository.deleteByTemplateId(saved.getId());
@@ -94,7 +103,18 @@ public class MaterialTemplateController {
     @DeleteMapping("/{vehicleType}")
     @Transactional
     public ResponseEntity<Void> deleteByVehicleType(@PathVariable String vehicleType) {
-        Optional<MaterialTemplate> existing = materialTemplateRepository.findByVehicleType(vehicleType);
+        Optional<MaterialTemplate> existing = materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE_TYPE, vehicleType.trim());
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        materialTemplateRepository.delete(existing.get());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/id/{id}")
+    @Transactional
+    public ResponseEntity<Void> deleteById(@PathVariable Long id) {
+        Optional<MaterialTemplate> existing = materialTemplateRepository.findById(id);
         if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
@@ -155,6 +175,22 @@ public class MaterialTemplateController {
         return t;
     }
 
+    private static String normalizeScopeType(String raw) {
+        if (isBlank(raw)) return SCOPE_VEHICLE_TYPE;
+        String s = raw.trim().toUpperCase(Locale.ROOT);
+        if (SCOPE_VEHICLE.equals(s)) return SCOPE_VEHICLE;
+        return SCOPE_VEHICLE_TYPE;
+    }
+
+    private static String normalizeScopeValue(String scopeType, MaterialTemplateUpsertRequest request) {
+        String raw = request.getScopeValue();
+        if (isBlank(raw)) raw = request.getVehicleType();
+        if (isBlank(raw)) return null;
+        String value = raw.trim();
+        if (SCOPE_VEHICLE.equals(scopeType)) return value;
+        return value;
+    }
+
     private static BigDecimal findRatio(List<MaterialRatioItem> items, String type) {
         return items.stream()
                 .filter(i -> type.equals(i.getMaterialType()))
@@ -183,7 +219,10 @@ public class MaterialTemplateController {
         return MaterialTemplateDto.builder()
                 .id(t.getId())
                 .vehicleType(t.getVehicleType())
+                .scopeType(t.getScopeType())
+                .scopeValue(t.getScopeValue())
                 .recoveryRatio(t.getRecoveryRatio())
+                .othersPricePerKgOverride(t.getOthersPricePerKgOverride())
                 .createdAt(t.getCreatedAt())
                 .materials(materials)
                 .build();

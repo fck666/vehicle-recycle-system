@@ -29,15 +29,15 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
             """)
     Page<VehicleModel> search(@Param("q") String q, Pageable pageable);
 
-    @Query("select distinct v.vehicleType from VehicleModel v where v.vehicleType is not null and trim(v.vehicleType) <> '' order by v.vehicleType asc")
+    @Query("select distinct v.vehicleType from VehicleModel v where v.vehicleType is not null and length(trim(v.vehicleType)) > 0 order by v.vehicleType asc")
     List<String> findDistinctVehicleTypes();
 
-    @Query("select distinct v.brand from VehicleModel v where v.brand is not null and trim(v.brand) <> '' order by v.brand asc")
+    @Query("select distinct v.brand from VehicleModel v where v.brand is not null and length(trim(v.brand)) > 0 order by v.brand asc")
     List<String> findDistinctBrands();
 
-    @Query("select distinct v.manufacturerName from VehicleModel v where v.manufacturerName is not null and trim(v.manufacturerName) <> '' order by v.manufacturerName asc")
+    @Query("select distinct v.manufacturerName from VehicleModel v where v.manufacturerName is not null and length(trim(v.manufacturerName)) > 0 order by v.manufacturerName asc")
     List<String> findDistinctManufacturers();
 
-    @Query("select distinct v.fuelType from VehicleModel v where v.fuelType is not null and trim(v.fuelType) <> '' order by v.fuelType asc")
+    @Query("select distinct v.fuelType from VehicleModel v where v.fuelType is not null and length(trim(v.fuelType)) > 0 order by v.fuelType asc")
     List<String> findDistinctFuelTypes();
 }

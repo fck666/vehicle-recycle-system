@@ -12,7 +12,10 @@ import java.util.List;
 public class MaterialTemplateDto {
     private Long id;
     private String vehicleType;
+    private String scopeType;
+    private String scopeValue;
     private BigDecimal recoveryRatio;
+    private BigDecimal othersPricePerKgOverride;
     private LocalDateTime createdAt;
     private List<MaterialRatioItem> materials;
 }

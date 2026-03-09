@@ -51,11 +51,28 @@ public class AdminVehicleController {
             @RequestParam(required = false) List<String> vehicleTypes,
             @RequestParam(required = false) List<String> fuelTypes,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sort
     ) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 200);
-        PageRequest pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
+
+        Sort sortObj = Sort.by(Sort.Direction.DESC, "id");
+        if (sort != null && !sort.trim().isEmpty()) {
+            String[] parts = sort.split(",");
+            if (parts.length > 0) {
+                String property = parts[0].trim();
+                Sort.Direction direction = Sort.Direction.ASC;
+                if (parts.length > 1) {
+                    if ("desc".equalsIgnoreCase(parts[1].trim())) {
+                        direction = Sort.Direction.DESC;
+                    }
+                }
+                sortObj = Sort.by(direction, property);
+            }
+        }
+        
+        PageRequest pageable = PageRequest.of(safePage, safeSize, sortObj);
 
         Specification<VehicleModel> spec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
                 q, brands, manufacturers, vehicleTypes, fuelTypes, null

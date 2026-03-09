@@ -54,13 +54,15 @@ CREATE TABLE IF NOT EXISTS vehicle_model (
 
 CREATE TABLE IF NOT EXISTS material_template (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  vehicle_type VARCHAR(32) NOT NULL,
+  vehicle_type VARCHAR(32),
+  scope_type VARCHAR(16) NOT NULL DEFAULT 'VEHICLE_TYPE',
+  scope_value VARCHAR(64) NOT NULL,
   steel_ratio DECIMAL(5,4) NOT NULL,
   aluminum_ratio DECIMAL(5,4) NOT NULL,
   copper_ratio DECIMAL(5,4) NOT NULL,
   recovery_ratio DECIMAL(5,4) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_material_template_vehicle_type (vehicle_type)
+  others_price_per_kg_override DECIMAL(10,2),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS material_template_item (
@@ -255,4 +257,33 @@ CREATE TABLE IF NOT EXISTS job_run (
   INDEX idx_job_run_run_id (run_id)
 );
 
-ALTER TABLE valuation_record ADD COLUMN IF NOT EXISTS details_json LONGTEXT;
+ALTER TABLE valuation_record ADD COLUMN details_json LONGTEXT;
+ALTER TABLE material_template MODIFY COLUMN vehicle_type VARCHAR(32) NULL;
+ALTER TABLE material_template ADD COLUMN scope_type VARCHAR(16) NOT NULL DEFAULT 'VEHICLE_TYPE';
+ALTER TABLE material_template ADD COLUMN scope_value VARCHAR(64) NULL;
+ALTER TABLE material_template ADD COLUMN others_price_per_kg_override DECIMAL(10,2) NULL;
+UPDATE material_template
+SET scope_type = 'VEHICLE_TYPE',
+    scope_value = vehicle_type
+WHERE (scope_type IS NULL OR scope_type = '')
+  AND vehicle_type IS NOT NULL;
+ALTER TABLE material_template MODIFY COLUMN scope_value VARCHAR(64) NOT NULL;
+ALTER TABLE material_template ADD UNIQUE KEY uk_material_template_scope (scope_type, scope_value);
+
+CREATE TABLE IF NOT EXISTS vehicle_dismantle_record (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  vehicle_id BIGINT NOT NULL,
+  steel_weight DECIMAL(10,2),
+  aluminum_weight DECIMAL(10,2),
+  copper_weight DECIMAL(10,2),
+  battery_weight DECIMAL(10,2),
+  other_weight DECIMAL(10,2),
+  details_json LONGTEXT,
+  operator_name VARCHAR(64),
+  operator_id VARCHAR(64),
+  images_json LONGTEXT,
+  remark VARCHAR(512),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_vdr_vehicle_id (vehicle_id),
+  INDEX idx_vdr_operator (operator_id)
+);

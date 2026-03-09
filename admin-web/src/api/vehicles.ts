@@ -10,6 +10,7 @@ export interface VehicleSearchParams {
   sourceTypes?: string[]
   page?: number
   size?: number
+  sort?: string
 }
 
 export interface VehicleFacets {
@@ -30,6 +31,7 @@ export async function searchVehicles(params: VehicleSearchParams): Promise<Page<
   
   query.append('page', (params.page || 0).toString())
   query.append('size', (params.size || 20).toString())
+  if (params.sort) query.append('sort', params.sort)
   
   return requestJson<Page<VehicleModel>>('GET', `/api/admin/vehicles?${query.toString()}`)
 }

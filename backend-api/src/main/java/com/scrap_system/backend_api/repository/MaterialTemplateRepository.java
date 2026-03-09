@@ -8,4 +8,5 @@ import java.util.Optional;
 @Repository
 public interface MaterialTemplateRepository extends JpaRepository<MaterialTemplate, Long> {
     Optional<MaterialTemplate> findByVehicleType(String vehicleType);
+    Optional<MaterialTemplate> findByScopeTypeAndScopeValue(String scopeType, String scopeValue);
 }

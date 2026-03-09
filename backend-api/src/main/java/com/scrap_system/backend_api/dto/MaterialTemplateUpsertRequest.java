@@ -8,6 +8,9 @@ import java.util.List;
 @Data
 public class MaterialTemplateUpsertRequest {
     private String vehicleType;
+    private String scopeType;
+    private String scopeValue;
     private BigDecimal recoveryRatio;
+    private BigDecimal othersPricePerKgOverride;
     private List<MaterialRatioItem> materials;
 }

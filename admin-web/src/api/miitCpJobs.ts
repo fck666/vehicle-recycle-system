@@ -29,3 +29,7 @@ export async function listMiitCpJobs(page: number, size: number): Promise<Page<J
 export async function getMiitCpJob(runId: string): Promise<JobRun> {
   return requestJson<JobRun>('GET', `/api/admin/miit-cp-jobs/${encodeURIComponent(runId)}`)
 }
+
+export async function retryMiitCpJob(runId: string): Promise<JobRun> {
+  return requestJson<JobRun>('POST', `/api/admin/miit-cp-jobs/${encodeURIComponent(runId)}/retry`)
+}

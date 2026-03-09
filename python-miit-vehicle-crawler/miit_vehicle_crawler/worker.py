@@ -52,6 +52,7 @@ def run_worker(backend: str, token: str, poll_interval_sec: float = 3.0) -> None
             page_size = int(config.get("pageSize") or 10)
             limit = config.get("limit")
             headful = bool(config.get("headful", True))
+            retry_items = config.get("retryItems")
 
             def report(progress: dict[str, Any]) -> None:
                 payload = {"config": config, "progress": progress}
@@ -86,6 +87,7 @@ def run_worker(backend: str, token: str, poll_interval_sec: float = 3.0) -> None
                 headful=headful,
                 limit=limit,
                 on_progress=report,
+                retry_items=retry_items,
             )
             payload = {"config": config, "progress": {"stage": "DONE", "result": result}}
             complete_miit_cp_job(

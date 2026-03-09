@@ -44,6 +44,22 @@ export interface VehicleDocument {
   createdAt?: string | null
 }
 
+export interface VehicleDismantleRecord {
+  id: number
+  vehicleId: number
+  steelWeight?: number | null
+  aluminumWeight?: number | null
+  copperWeight?: number | null
+  batteryWeight?: number | null
+  otherWeight?: number | null
+  detailsJson?: string | null
+  operatorName?: string | null
+  operatorId?: string | null
+  imagesJson?: string | null
+  remark?: string | null
+  createdAt?: string | null
+}
+
 export interface VehicleUpsertRequest {
   brand?: string
   model?: string
@@ -72,8 +88,11 @@ export interface MaterialPrice {
 
 export interface MaterialTemplate {
   id: number
-  vehicleType: string
+  vehicleType?: string | null
+  scopeType: 'VEHICLE_TYPE' | 'VEHICLE'
+  scopeValue: string
   recoveryRatio: number
+  othersPricePerKgOverride?: number | null
   materials: MaterialRatioItem[]
   createdAt?: string | null
 }

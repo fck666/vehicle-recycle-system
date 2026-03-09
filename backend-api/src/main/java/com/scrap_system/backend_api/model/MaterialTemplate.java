@@ -13,8 +13,17 @@ public class MaterialTemplate {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "vehicle_type", nullable = false, length = 32)
+    @Column(name = "vehicle_type", length = 32)
     private String vehicleType;
+
+    @Column(name = "scope_type", nullable = false, length = 16)
+    private String scopeType;
+
+    @Column(name = "scope_value", nullable = false, length = 64)
+    private String scopeValue;
+
+    @Column(name = "others_price_per_kg_override", precision = 10, scale = 2)
+    private BigDecimal othersPricePerKgOverride;
 
     @Column(name = "steel_ratio", nullable = false, precision = 5, scale = 4)
     private BigDecimal steelRatio;

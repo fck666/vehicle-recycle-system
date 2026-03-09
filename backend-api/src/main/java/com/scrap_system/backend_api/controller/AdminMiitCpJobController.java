@@ -163,6 +163,70 @@ public class AdminMiitCpJobController {
         return ResponseEntity.ok(jobRunService.failed(jr, msg, detailsJson));
     }
 
+    @PostMapping("/{runId}/retry")
+    @Transactional
+    public ResponseEntity<JobRun> retry(Authentication authentication, @PathVariable String runId) {
+        Optional<JobRun> opt = jobRunRepository.findByRunId(runId);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+        JobRun oldJob = opt.get();
+        if (!JOB_TYPE.equals(oldJob.getJobType())) return ResponseEntity.badRequest().build();
+        
+        // Extract config and failed items from old job details
+        String detailsJson = oldJob.getDetailsJson();
+        if (detailsJson == null) return ResponseEntity.badRequest().build();
+        
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<String, Object> details = mapper.readValue(detailsJson, Map.class);
+            Map<String, Object> oldConfig = (Map<String, Object>) details.get("config");
+            
+            // Check for failed items in progress.result or just progress
+            // Based on python code: payload = {"config": config, "progress": {"stage": "DONE", "result": result}}
+            // result has "failed_items"
+            
+            List<Map<String, Object>> failedItems = null;
+            Map<String, Object> progress = (Map<String, Object>) details.get("progress");
+            if (progress != null) {
+                Map<String, Object> result = (Map<String, Object>) progress.get("result");
+                if (result != null) {
+                    failedItems = (List<Map<String, Object>>) result.get("failed_items");
+                }
+            }
+            
+            if (failedItems == null || failedItems.isEmpty()) {
+                // If no specific failed items found, maybe we just want to re-run the whole job?
+                // But the user specifically asked for "retry failed records".
+                // If there are no failed records recorded, we can't do partial retry.
+                // Let's return 400 with message if possible, or just bad request.
+                // For now, if no failed items, we fall back to re-running the whole job config?
+                // No, user requirement is specific.
+                return ResponseEntity.badRequest().body(null);
+            }
+            
+            // Construct new config with retryItems
+            Map<String, Object> newConfig = new HashMap<>();
+            if (oldConfig != null) {
+                newConfig.putAll(oldConfig);
+            }
+            newConfig.put("retryItems", failedItems);
+            
+            Map<String, Object> newDetailsMap = new HashMap<>();
+            newDetailsMap.put("config", newConfig);
+            newDetailsMap.put("progress", Map.of("stage", "CREATED", "retryFrom", runId));
+            
+            Long userId = authentication != null && authentication.getPrincipal() instanceof Long ? (Long) authentication.getPrincipal() : null;
+            String actorName = userId == null ? null : ("user:" + userId);
+            
+            JobRun jr = jobRunService.createPending(JOB_TYPE, null, userId, actorName, JsonUtil.toJson(newDetailsMap));
+            jr.setMessage("retry of " + runId);
+            return ResponseEntity.ok(jobRunRepository.save(jr));
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     private static String trimOrNull(String s) {
         if (s == null) return null;
         String t = s.trim();

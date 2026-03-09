@@ -241,55 +241,81 @@ def sync_cp(
     limit: int = 0,
     on_progress=None,
     run_id: str | None = None,
+    retry_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     session = requests.Session()
     if token:
         session.headers.update({"Authorization": f"Bearer {token}"})
 
     items: list[CpListItem] = []
-
-    search_configs = []
-    if qymc_list:
-        for q in qymc_list:
-            search_configs.append({"qymc": q, "cpsb": cpsb})
+    
+    if retry_items:
+        # Direct retry mode: bypass search
+        log("miit.cp.mode.retry", count=len(retry_items))
+        for x in retry_items:
+            # Reconstruct CpListItem from dict
+            # We expect x to contain keys matching CpListItem fields or raw dict
+            cpid = str(x.get("cpid") or "").strip()
+            pc = str(x.get("pc") or "").strip()
+            if not cpid or not pc:
+                continue
+            items.append(
+                CpListItem(
+                    cpid=cpid,
+                    pc=pc,
+                    data_tag=str(x.get("dataTag") or "Z").strip(),
+                    qymc=x.get("qymc"),
+                    cpsb=x.get("cpsb"),
+                    clxh=x.get("clxh"),
+                    clmc=x.get("clmc"),
+                )
+            )
     else:
-        brands = []
-        if cpsb_list:
-            brands.extend([x for x in cpsb_list if x.strip()])
-        if cpsb and cpsb.strip():
-            brands.insert(0, cpsb.strip())
-
-        if not brands:
-            search_configs.append({"qymc": qymc, "cpsb": None})
+        # Search mode
+        search_configs = []
+        if qymc_list:
+            for q in qymc_list:
+                search_configs.append({"qymc": q, "cpsb": cpsb})
         else:
-            for b in brands:
-                search_configs.append({"qymc": qymc, "cpsb": b})
+            brands = []
+            if cpsb_list:
+                brands.extend([x for x in cpsb_list if x.strip()])
+            if cpsb and cpsb.strip():
+                brands.insert(0, cpsb.strip())
 
-    for pc in range(pc_from, pc_to + 1):
-        for cfg in search_configs:
-            c_qymc = cfg["qymc"]
-            c_cpsb = cfg["cpsb"]
+            if not brands:
+                search_configs.append({"qymc": qymc, "cpsb": None})
+            else:
+                for b in brands:
+                    search_configs.append({"qymc": qymc, "cpsb": b})
 
-            if on_progress:
-                on_progress({"stage": "LIST", "pc": pc, "cpsb": c_cpsb, "qymc": c_qymc})
+        for pc in range(pc_from, pc_to + 1):
+            for cfg in search_configs:
+                c_qymc = cfg["qymc"]
+                c_cpsb = cfg["cpsb"]
 
-            items.extend(iter_cp_list(session, qymc=c_qymc, pc=pc, cpsb=c_cpsb, clxh=clxh, clmc=clmc, page_size=page_size))
+                if on_progress:
+                    on_progress({"stage": "LIST", "pc": pc, "cpsb": c_cpsb, "qymc": c_qymc})
 
+                items.extend(iter_cp_list(session, qymc=c_qymc, pc=pc, cpsb=c_cpsb, clxh=clxh, clmc=clmc, page_size=page_size))
+
+                if limit > 0 and len(items) >= limit:
+                    break
             if limit > 0 and len(items) >= limit:
                 break
-        if limit > 0 and len(items) >= limit:
-            break
 
-    if limit > 0:
-        items = items[: limit]
-    if on_progress:
-        on_progress({"stage": "LIST_DONE", "count": len(items)})
+        if limit > 0:
+            items = items[: limit]
+        if on_progress:
+            on_progress({"stage": "LIST_DONE", "count": len(items)})
 
     inserted = 0
     updated = 0
     skipped = 0
+    failed = 0
     images_uploaded = 0
     html_docs = 0
+    failed_items: list[dict[str, Any]] = []
 
     from playwright.sync_api import sync_playwright
 
@@ -330,106 +356,123 @@ def sync_cp(
         page = context.new_page()
 
         for idx, it in enumerate(items, start=1):
-            try:
-                log("miit.cp.process.start", idx=idx, total=len(items), cpid=it.cpid, pc=it.pc)
-                if on_progress:
-                    on_progress({"stage": "CHECK", "idx": idx, "total": len(items), "cpid": it.cpid})
+            retry_count = 0
+            max_retries = 3
+            last_error = None
+            success = False
 
-                # Dedup check: lookup vehicle by productNo/productId before visiting detail page
-                # The CpListItem has 'cpid' which maps to 'productId' in our system
-                # And 'clxh' which maps to 'productNo'
-                existing_vehicle = None
+            while retry_count <= max_retries:
                 try:
-                    # cpid is 'productId' (e.g. AB662101)
-                    # clxh is 'productNo' (e.g. FV6506HADEG)
-                    existing_vehicle = _lookup_vehicle(session, backend, it.cpid, it.clxh)
-                except Exception as e:
-                    log("miit.cp.lookup.error", err=str(e))
+                    log("miit.cp.process.start", idx=idx, total=len(items), cpid=it.cpid, pc=it.pc, attempt=retry_count + 1)
+                    if on_progress:
+                        on_progress({"stage": "CHECK", "idx": idx, "total": len(items), "cpid": it.cpid, "attempt": retry_count + 1})
 
-                if existing_vehicle:
-                    # Enhanced Dedup: Check completeness
-                    # We require at least one image and one HTML doc to consider it "done"
-                    # However, some vehicles might genuinely have no images. 
-                    # But for MIIT crawler, usually there should be images.
-                    # Let's check if images list is present and not empty.
-                    
-                    images = existing_vehicle.get("images") or []
-                    # documents might be list of dicts
-                    docs = existing_vehicle.get("documents") or []
-                    has_html = any(d.get("docType") == "MIIT_HTML" for d in docs)
-                    
-                    if has_html:
-                        log("miit.cp.exists.skip_detail", cpid=it.cpid, vid=existing_vehicle.get("id"))
-                        skipped += 1
-                        if on_progress:
-                            on_progress({"stage": "SKIP", "idx": idx, "total": len(items), "reason": "exists_complete"})
-                        continue
-                    else:
-                        log("miit.cp.exists.incomplete", cpid=it.cpid, vid=existing_vehicle.get("id"), img_count=len(images), has_html=has_html)
-                        # Fallthrough to fetch detail
-
-
-                log("miit.cp.detail.open", idx=idx, total=len(items), cpid=it.cpid, pc=it.pc)
-                if on_progress:
-                    on_progress({"stage": "DETAIL", "idx": idx, "total": len(items), "cpid": it.cpid, "pc": it.pc, "cpsb": it.cpsb})
-                
-                page.goto(it.detail_url, wait_until="domcontentloaded", timeout=60_000)
-                _maybe_wait_for_captcha(page)
-                page.wait_for_selector("table.query_result_table", timeout=60_000)
-                html = page.content()
-                field_map, img_urls = parse_detail_html(html, it.detail_url)
-                spec = to_vehicle_spec_item(field_map, it.detail_url, html)
-                spec.setdefault("brand", it.cpsb)
-                spec.setdefault("model", it.clxh)
-                spec.setdefault("vehicleType", it.clmc)
-                
-                # Fill defaults for required fields if missing
-                if spec.get("modelYear") is None:
-                    spec["modelYear"] = datetime.now().year
-                if spec.get("curbWeight") is None:
-                    spec["curbWeight"] = 0 # use 0 instead of 1
-                if spec.get("fuelType") is None:
-                    spec["fuelType"] = "未知"
-                if spec.get("vehicleType") is None:
-                    spec["vehicleType"] = "未知"
-                if spec.get("productNo") is None and it.clxh:
-                    spec["productNo"] = it.clxh
-                if spec.get("productId") is None and it.cpid:
-                    spec["productId"] = it.cpid
-
-                r1 = upsert_vehicle_specs(session, backend, [spec], run_id=None)
-                inserted += int(r1.get("inserted", 0))
-                updated += int(r1.get("updated", 0))
-                # Note: backend returns skipped if validation fails, but here we count 'exists skip' separately
-                # backend 'skipped' usually means invalid data
-                
-                if on_progress:
-                    on_progress({"stage": "UPSERT_SPEC", "inserted": inserted, "updated": updated, "skipped": skipped})
-
-                # Lookup again to get ID for images
-                vehicle = _lookup_vehicle(session, backend, spec.get("productId"), spec.get("productNo"))
-                vehicle_id = int(vehicle["id"]) if vehicle and vehicle.get("id") else None
-                img_map = {}
-                if vehicle_id is not None:
+                    # Dedup check: lookup vehicle by productNo/productId before visiting detail page
+                    # The CpListItem has 'cpid' which maps to 'productId' in our system
+                    # And 'clxh' which maps to 'productNo'
+                    existing_vehicle = None
                     try:
-                        img_count, img_map = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
-                        images_uploaded += img_count
+                        # cpid is 'productId' (e.g. AB662101)
+                        # clxh is 'productNo' (e.g. FV6506HADEG)
+                        existing_vehicle = _lookup_vehicle(session, backend, it.cpid, it.clxh)
                     except Exception as e:
-                        log("miit.cp.image.error", cpid=it.cpid, err=str(e), msg="Continuing with HTML upload")
-                try:
-                    html_docs += _upload_html_doc(session, backend, vehicle_id, it, _rewrite_html(html, img_map))
+                        log("miit.cp.lookup.error", err=str(e))
+
+                    log("miit.cp.detail.open", idx=idx, total=len(items), cpid=it.cpid, pc=it.pc)
+                    if on_progress:
+                        on_progress({"stage": "DETAIL", "idx": idx, "total": len(items), "cpid": it.cpid, "pc": it.pc, "cpsb": it.cpsb})
+                    
+                    page.goto(it.detail_url, wait_until="domcontentloaded", timeout=60_000)
+                    _maybe_wait_for_captcha(page)
+                    page.wait_for_selector("table.query_result_table", timeout=60_000)
+                    html = page.content()
+                    field_map, img_urls = parse_detail_html(html, it.detail_url)
+                    spec = to_vehicle_spec_item(field_map, it.detail_url, html)
+                    spec.setdefault("brand", it.cpsb)
+                    spec.setdefault("model", it.clxh)
+                    spec.setdefault("vehicleType", it.clmc)
+                    
+                    # Fill defaults for required fields if missing
+                    if spec.get("modelYear") is None:
+                        spec["modelYear"] = datetime.now().year
+                    if spec.get("curbWeight") is None:
+                        spec["curbWeight"] = 0 # use 0 instead of 1
+                    if spec.get("fuelType") is None:
+                        spec["fuelType"] = "未知"
+                    if spec.get("vehicleType") is None:
+                        spec["vehicleType"] = "未知"
+                    if spec.get("productNo") is None and it.clxh:
+                        spec["productNo"] = it.clxh
+                    if spec.get("productId") is None and it.cpid:
+                        spec["productId"] = it.cpid
+
+                    if existing_vehicle:
+                        existing_images = existing_vehicle.get("images") or []
+                        existing_docs = existing_vehicle.get("documents") or []
+                        has_html = any(d.get("docType") == "MIIT_HTML" for d in existing_docs)
+                        expected_images = len(img_urls)
+                        has_all_images = len(existing_images) >= expected_images
+                        if has_html and has_all_images:
+                            log("miit.cp.exists.skip", cpid=it.cpid, vid=existing_vehicle.get("id"), expected_images=expected_images, actual_images=len(existing_images))
+                            skipped += 1
+                            if on_progress:
+                                on_progress({"stage": "SKIP", "idx": idx, "total": len(items), "reason": "exists_complete"})
+                            success = True
+                            break # Break retry loop
+                        log("miit.cp.exists.incomplete", cpid=it.cpid, vid=existing_vehicle.get("id"), expected_images=expected_images, actual_images=len(existing_images), has_html=has_html)
+
+                    r1 = upsert_vehicle_specs(session, backend, [spec], run_id=None)
+                    inserted_delta = int(r1.get("inserted", 0))
+                    updated_delta = int(r1.get("updated", 0))
+                    
+                    if on_progress:
+                        on_progress({"stage": "UPSERT_SPEC", "inserted": inserted, "updated": updated, "skipped": skipped, "failed": failed})
+
+                    vehicle = _lookup_vehicle(session, backend, spec.get("productId"), spec.get("productNo"))
+                    vehicle_id = int(vehicle["id"]) if vehicle and vehicle.get("id") else None
+                    if vehicle_id is None:
+                        raise RuntimeError(f"vehicle id not found after upsert: cpid={it.cpid}")
+                    img_map = {}
+                    try:
+                        expected_image_count = len(img_urls)
+                        img_count, img_map = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
+                        if img_count != expected_image_count:
+                            raise RuntimeError(f"image incomplete for cpid={it.cpid}, expected={expected_image_count}, uploaded={img_count}")
+                        images_uploaded += img_count
+                        html_docs += _upload_html_doc(session, backend, vehicle_id, it, _rewrite_html(html, img_map))
+                        inserted += inserted_delta
+                        updated += updated_delta
+                    except Exception as e:
+                        _delete_vehicle(session, backend, vehicle_id)
+                        raise RuntimeError(f"vehicle rolled back for cpid={it.cpid}: {str(e)}")
+                    
+                    if on_progress:
+                        on_progress({"stage": "DETAIL_DONE", "idx": idx, "total": len(items), "inserted": inserted, "updated": updated, "skipped": skipped, "failed": failed, "imagesUploaded": images_uploaded, "htmlDocs": html_docs})
+                    
+                    success = True
+                    break # Break retry loop
+
                 except Exception as e:
-                    log("miit.cp.html.error", cpid=it.cpid, err=str(e))
-                
-                if on_progress:
-                    on_progress({"stage": "DETAIL_DONE", "idx": idx, "total": len(items), "inserted": inserted, "updated": updated, "skipped": skipped, "imagesUploaded": images_uploaded, "htmlDocs": html_docs})
-            
-            except Exception as e:
-                # If error, we count as skipped for progress tracking purpose
-                skipped += 1
-                log("miit.cp.detail.error", cpid=it.cpid, pc=it.pc, err=str(e))
-                if on_progress:
-                    on_progress({"stage": "DETAIL_ERROR", "idx": idx, "total": len(items), "cpid": it.cpid, "pc": it.pc, "error": str(e), "inserted": inserted, "updated": updated, "skipped": skipped})
+                    last_error = e
+                    log("miit.cp.detail.error", cpid=it.cpid, pc=it.pc, err=str(e), attempt=retry_count + 1)
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        time.sleep(2) # Wait before retry
+                    else:
+                        # All retries failed
+                        failed += 1
+                        failed_items.append({
+                            "cpid": it.cpid,
+                            "pc": it.pc,
+                            "dataTag": it.data_tag,
+                            "qymc": it.qymc,
+                            "cpsb": it.cpsb,
+                            "clxh": it.clxh,
+                            "clmc": it.clmc,
+                            "error": str(e)
+                        })
+                        if on_progress:
+                            on_progress({"stage": "DETAIL_ERROR", "idx": idx, "total": len(items), "cpid": it.cpid, "pc": it.pc, "error": str(e), "inserted": inserted, "updated": updated, "skipped": skipped, "failed": failed})
 
         browser.close()
 
@@ -438,8 +481,10 @@ def sync_cp(
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
+        "failed": failed,
         "html_docs": html_docs,
         "images_uploaded": images_uploaded,
+        "failed_items": failed_items,
     }
 
 
@@ -468,6 +513,14 @@ def _lookup_vehicle(session: requests.Session, backend: str, product_id: str | N
         return None
     resp.raise_for_status()
     return resp.json()
+
+
+def _delete_vehicle(session: requests.Session, backend: str, vehicle_id: int) -> None:
+    base = backend.rstrip("/")
+    resp = session.delete(f"{base}/api/admin/vehicles/{vehicle_id}", timeout=30)
+    if resp.status_code == 404:
+        return
+    resp.raise_for_status()
 
 
 def _upload_html_doc(session: requests.Session, backend: str, vehicle_id: int | None, it: CpListItem, html: str) -> int:
@@ -537,7 +590,7 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                     data = r.json()
                     if isinstance(data, dict) and data.get("imageUrl"):
                         mapping[u] = data["imageUrl"]
-                    uploaded += 1
+                        uploaded += 1
             finally:
                 try:
                     os.unlink(tmp_path)

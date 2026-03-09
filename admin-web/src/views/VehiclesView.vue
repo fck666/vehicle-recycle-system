@@ -3,8 +3,10 @@ import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Page, VehicleDocument, VehicleImage, VehicleModel, VehicleUpsertRequest } from '../api/types'
-import { createVehicle, deleteVehicle, getVehicle, searchVehicles, updateVehicle, type VehicleSearchParams } from '../api/vehicles'
+import { createVehicle, deleteVehicle, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
 import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage } from '../api/vehicleMedia'
+import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
+import type { VehicleDismantleRecord } from '../api/types'
 
 const q = ref('')
 const loading = ref(false)
@@ -12,7 +14,7 @@ const page = ref(0)
 const size = ref(20)
 const result = ref<Page<VehicleModel>>({ content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 })
 
-const advSearchVisible = ref(false)
+const isAdvSearchExpanded = ref(false)
 const advParams = reactive<{
   brands: string[]
   manufacturers: string[]
@@ -27,11 +29,10 @@ const advParams = reactive<{
   sourceTypes: []
 })
 
-// TODO: These should be fetched from backend aggregations, but for now we can allow user input or hardcode some
-const brandOptions = ref(['奥迪', '宝马', '奔驰', '大众', '丰田', '本田'])
-const manufacturerOptions = ref(['一汽-大众', '上汽大众', '一汽丰田', '广汽丰田'])
-const vehicleTypeOptions = ref(['轿车', 'SUV', 'MPV', '货车', '客车'])
-const fuelTypeOptions = ref(['汽油', '柴油', '纯电动', '插电式混合动力'])
+const brandOptions = ref<string[]>([])
+const manufacturerOptions = ref<string[]>([])
+const vehicleTypeOptions = ref<string[]>([])
+const fuelTypeOptions = ref<string[]>([])
 const sourceTypeOptions = ref([
   { label: '系统采集', value: 'CRAWLED' },
   { label: '手动录入', value: 'MANUAL' },
@@ -51,6 +52,20 @@ const mediaVehicle = ref<VehicleModel | null>(null)
 const previewDocVisible = ref(false)
 const previewDocUrl = ref('')
 
+const dismantleVisible = ref(false)
+const dismantleLoading = ref(false)
+const dismantleRecords = ref<VehicleDismantleRecord[]>([])
+const currentDismantleVehicleId = ref<number | null>(null)
+const dismantleFormVisible = ref(false)
+const dismantleForm = reactive<Partial<VehicleDismantleRecord>>({
+  steelWeight: 0,
+  aluminumWeight: 0,
+  copperWeight: 0,
+  batteryWeight: 0,
+  otherWeight: 0,
+  remark: ''
+})
+
 const form = reactive<VehicleUpsertRequest>({
   brand: '',
   model: '',
@@ -66,6 +81,21 @@ const form = reactive<VehicleUpsertRequest>({
 
 const title = computed(() => (dialogMode.value === 'create' ? '新增车型' : '编辑车型'))
 
+async function loadFacets() {
+  try {
+    const facets = await getVehicleFacets()
+    brandOptions.value = facets.brands
+    manufacturerOptions.value = facets.manufacturers
+    vehicleTypeOptions.value = facets.vehicleTypes
+    fuelTypeOptions.value = facets.fuelTypes
+  } catch (e) {
+    console.error('Failed to load facets', e)
+  }
+}
+
+const sortProp = ref('id')
+const sortOrder = ref('descending')
+
 async function load() {
   loading.value = true
   try {
@@ -73,7 +103,8 @@ async function load() {
       q: q.value,
       page: page.value,
       size: size.value,
-      ...advParams
+      ...advParams,
+      sort: sortProp.value ? `${sortProp.value},${sortOrder.value === 'ascending' ? 'asc' : 'desc'}` : undefined
     }
     result.value = await searchVehicles(params)
   } catch (e: any) {
@@ -88,9 +119,14 @@ function onSearch() {
   load()
 }
 
-function onAdvSearch() {
-  advSearchVisible.value = false
+function onSortChange({ prop, order }: { prop: string, order: string }) {
+  sortProp.value = prop
+  sortOrder.value = order
   onSearch()
+}
+
+function toggleAdvSearch() {
+  isAdvSearchExpanded.value = !isAdvSearchExpanded.value
 }
 
 function resetAdvSearch() {
@@ -99,6 +135,7 @@ function resetAdvSearch() {
    advParams.vehicleTypes = []
    advParams.fuelTypes = []
    advParams.sourceTypes = []
+   onSearch()
  }
 
 function openCreate() {
@@ -194,6 +231,66 @@ function showDoc(url: string) {
   previewDocVisible.value = true
 }
 
+async function loadDismantleRecords(vehicleId: number) {
+  dismantleLoading.value = true
+  try {
+    dismantleRecords.value = await getDismantleRecords(vehicleId)
+  } catch (e) {
+    ElMessage.error('加载拆解记录失败')
+  } finally {
+    dismantleLoading.value = false
+  }
+}
+
+function openDismantle(row: VehicleModel) {
+  currentDismantleVehicleId.value = row.id
+  dismantleVisible.value = true
+  loadDismantleRecords(row.id)
+}
+
+function openDismantleForm() {
+  dismantleForm.steelWeight = 0
+  dismantleForm.aluminumWeight = 0
+  dismantleForm.copperWeight = 0
+  dismantleForm.batteryWeight = 0
+  dismantleForm.otherWeight = 0
+  dismantleForm.remark = ''
+  dismantleFormVisible.value = true
+}
+
+async function submitDismantle() {
+  if (!currentDismantleVehicleId.value) return
+  
+  try {
+    await createDismantleRecord({
+      vehicleId: currentDismantleVehicleId.value,
+      steelWeight: dismantleForm.steelWeight || 0,
+      aluminumWeight: dismantleForm.aluminumWeight || 0,
+      copperWeight: dismantleForm.copperWeight || 0,
+      batteryWeight: dismantleForm.batteryWeight || 0,
+      otherWeight: dismantleForm.otherWeight || 0,
+      remark: dismantleForm.remark
+    } as any)
+    ElMessage.success('已保存')
+    dismantleFormVisible.value = false
+    loadDismantleRecords(currentDismantleVehicleId.value)
+  } catch (e) {
+    ElMessage.error('保存失败')
+  }
+}
+
+async function deleteDismantle(id: number) {
+  try {
+    await ElMessageBox.confirm('确认删除该记录吗？', '删除确认', { type: 'warning' })
+    await deleteDismantleRecord(id)
+    ElMessage.success('已删除')
+    if (currentDismantleVehicleId.value) {
+      loadDismantleRecords(currentDismantleVehicleId.value)
+    }
+  } catch {
+  }
+}
+
 async function saveImage(vehicleId: number, img: VehicleImage) {
   try {
     await updateVehicleImage(vehicleId, img.id, { imageName: img.imageName ?? null, sortOrder: img.sortOrder ?? 0 })
@@ -247,41 +344,95 @@ function onCurrentChange(v: number) {
 }
 
 load()
+loadFacets()
 </script>
 
 <template>
   <el-card>
     <template #header>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <el-input v-model="q" placeholder="搜索品牌/车型/产品号..." style="width:300px;" @keyup.enter="onSearch" />
-          <el-button type="primary" :loading="loading" @click="onSearch">查询</el-button>
-          <el-button @click="advSearchVisible = true">高级搜索</el-button>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;flex:1;">
+            <el-input v-model="q" placeholder="搜索品牌/车型/产品号..." style="max-width:400px;" @keyup.enter="onSearch">
+              <template #append>
+                <el-button @click="onSearch">查询</el-button>
+              </template>
+            </el-input>
+            <el-button @click="toggleAdvSearch">
+              {{ isAdvSearchExpanded ? '收起筛选' : '高级搜索' }}
+            </el-button>
+          </div>
+          <el-button v-if="canEdit" type="primary" @click="openCreate">新增车型</el-button>
         </div>
-        <el-button v-if="canEdit" type="primary" @click="openCreate">新增车型</el-button>
+
+        <div v-show="isAdvSearchExpanded" style="background-color:var(--el-fill-color-light);padding:16px;border-radius:4px;">
+           <el-form label-position="top">
+             <el-row :gutter="20">
+               <el-col :span="6">
+                 <el-form-item label="品牌">
+                   <el-select v-model="advParams.brands" multiple filterable collapse-tags placeholder="全部" style="width:100%">
+                     <el-option v-for="item in brandOptions" :key="item" :label="item" :value="item" />
+                   </el-select>
+                 </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                 <el-form-item label="生产企业">
+                   <el-select v-model="advParams.manufacturers" multiple filterable collapse-tags placeholder="全部" style="width:100%">
+                     <el-option v-for="item in manufacturerOptions" :key="item" :label="item" :value="item" />
+                   </el-select>
+                 </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                 <el-form-item label="车辆类型">
+                   <el-select v-model="advParams.vehicleTypes" multiple filterable collapse-tags placeholder="全部" style="width:100%">
+                     <el-option v-for="item in vehicleTypeOptions" :key="item" :label="item" :value="item" />
+                   </el-select>
+                 </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                 <el-form-item label="燃料类型">
+                   <el-select v-model="advParams.fuelTypes" multiple filterable collapse-tags placeholder="全部" style="width:100%">
+                     <el-option v-for="item in fuelTypeOptions" :key="item" :label="item" :value="item" />
+                   </el-select>
+                 </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                 <el-form-item label="数据来源">
+                   <el-select v-model="advParams.sourceTypes" multiple collapse-tags placeholder="全部" style="width:100%">
+                     <el-option v-for="item in sourceTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                   </el-select>
+                 </el-form-item>
+               </el-col>
+               <el-col :span="18" style="display:flex;align-items:flex-end;justify-content:flex-end;">
+                 <el-button @click="resetAdvSearch">重置</el-button>
+                 <el-button type="primary" @click="onSearch">确认筛选</el-button>
+               </el-col>
+             </el-row>
+           </el-form>
+        </div>
       </div>
     </template>
 
-    <el-table :data="result.content" v-loading="loading" stripe>
-      <el-table-column prop="id" label="ID" width="90" />
-      <el-table-column prop="sourceType" label="来源" width="100">
+    <el-table :data="result.content" v-loading="loading" stripe @sort-change="onSortChange">
+      <el-table-column prop="id" label="ID" width="90" sortable="custom" />
+      <el-table-column prop="sourceType" label="来源" width="100" sortable="custom">
         <template #default="{ row }">
           <el-tag v-if="row.sourceType === 'CRAWLED'" type="info">系统采集</el-tag>
           <el-tag v-else-if="row.sourceType === 'MANUAL'" type="success">手动录入</el-tag>
           <el-tag v-else-if="row.sourceType === 'EDITED'" type="warning">采集后编辑</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="brand" label="品牌" width="120" />
-      <el-table-column prop="model" label="车型" width="180" />
-      <el-table-column prop="modelYear" label="年份" width="100" />
-      <el-table-column prop="fuelType" label="燃料" width="120" />
-      <el-table-column prop="vehicleType" label="类型" width="140" />
-      <el-table-column prop="curbWeight" label="整备质量(kg)" width="140" />
-      <el-table-column prop="grossWeight" label="总质量(kg)" width="140" />
-      <el-table-column prop="batteryKwh" label="电池(kWh)" width="120" />
-      <el-table-column prop="productId" label="产品ID" width="140" />
-      <el-table-column prop="productNo" label="产品号" width="160" />
-      <el-table-column prop="batchNo" label="批次" width="100" />
+      <el-table-column prop="brand" label="品牌" width="120" sortable="custom" />
+      <el-table-column prop="model" label="车型" width="180" sortable="custom" />
+      <el-table-column prop="modelYear" label="年份" width="100" sortable="custom" />
+      <el-table-column prop="fuelType" label="燃料" width="120" sortable="custom" />
+      <el-table-column prop="vehicleType" label="类型" width="140" sortable="custom" />
+      <el-table-column prop="curbWeight" label="整备质量(kg)" width="140" sortable="custom" />
+      <el-table-column prop="grossWeight" label="总质量(kg)" width="140" sortable="custom" />
+      <el-table-column prop="batteryKwh" label="电池(kWh)" width="120" sortable="custom" />
+      <el-table-column prop="productId" label="产品ID" width="140" sortable="custom" />
+      <el-table-column prop="productNo" label="产品号" width="160" sortable="custom" />
+      <el-table-column prop="batchNo" label="批次" width="100" sortable="custom" />
       <el-table-column label="HTML 存档" width="160">
         <template #default="{ row }">
           <div v-if="row.documents && row.documents.length > 0">
@@ -294,6 +445,7 @@ load()
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openMedia(row)">媒体</el-button>
+          <el-button link type="primary" size="small" @click="openDismantle(row)">拆解记录</el-button>
           <el-button v-if="canEdit" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button v-if="canEdit" link type="danger" size="small" @click="onDelete(row)">删除</el-button>
         </template>
@@ -313,84 +465,7 @@ load()
     </div>
   </el-card>
 
-  <el-drawer v-model="advSearchVisible" title="高级搜索" size="400px">
-      <el-form label-position="top">
-        <el-form-item label="品牌 (Brands)">
-          <el-select
-            v-model="advParams.brands"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="请选择或输入品牌"
-            style="width:100%"
-          >
-            <el-option v-for="item in brandOptions" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="生产企业 (Manufacturers)">
-          <el-select
-            v-model="advParams.manufacturers"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="请选择或输入企业名称"
-            style="width:100%"
-          >
-            <el-option v-for="item in manufacturerOptions" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="车辆类型 (Vehicle Types)">
-          <el-select
-            v-model="advParams.vehicleTypes"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="请选择或输入车辆类型"
-            style="width:100%"
-          >
-            <el-option v-for="item in vehicleTypeOptions" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="燃料类型 (Fuel Types)">
-          <el-select
-            v-model="advParams.fuelTypes"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="请选择或输入燃料类型"
-            style="width:100%"
-          >
-            <el-option v-for="item in fuelTypeOptions" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="数据来源 (Data Source)">
-          <el-select
-            v-model="advParams.sourceTypes"
-            multiple
-            placeholder="请选择数据来源"
-            style="width:100%"
-          >
-            <el-option v-for="item in sourceTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div style="flex: auto">
-          <el-button @click="resetAdvSearch">重置</el-button>
-          <el-button type="primary" @click="onAdvSearch">确认搜索</el-button>
-        </div>
-      </template>
-    </el-drawer>
-
-    <el-dialog
+  <el-dialog
       v-model="dialogVisible" :title="title" width="680px">
     <el-form label-width="110px">
       <el-form-item label="品牌" required>
@@ -508,6 +583,54 @@ load()
       </el-card>
     </div>
   </el-drawer>
+
+  <el-dialog v-model="dismantleVisible" title="拆解实测记录" width="800px">
+    <div style="margin-bottom:12px;text-align:right;">
+      <el-button type="primary" @click="openDismantleForm">新增记录</el-button>
+    </div>
+    <el-table :data="dismantleRecords" v-loading="dismantleLoading" stripe border>
+      <el-table-column prop="createdAt" label="录入时间" width="160" />
+      <el-table-column prop="operatorName" label="操作员" width="120" />
+      <el-table-column prop="steelWeight" label="钢(kg)" width="100" />
+      <el-table-column prop="aluminumWeight" label="铝(kg)" width="100" />
+      <el-table-column prop="copperWeight" label="铜(kg)" width="100" />
+      <el-table-column prop="batteryWeight" label="电池(kg)" width="100" />
+      <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
+      <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
+      <el-table-column label="操作" width="100" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="danger" size="small" @click="deleteDismantle(row.id)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-dialog>
+
+  <el-dialog v-model="dismantleFormVisible" title="录入拆解数据" width="500px">
+    <el-form label-width="100px">
+      <el-form-item label="钢重量(kg)">
+        <el-input-number v-model="dismantleForm.steelWeight" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="铝重量(kg)">
+        <el-input-number v-model="dismantleForm.aluminumWeight" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="铜重量(kg)">
+        <el-input-number v-model="dismantleForm.copperWeight" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="电池重量(kg)">
+        <el-input-number v-model="dismantleForm.batteryWeight" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="其他重量(kg)">
+        <el-input-number v-model="dismantleForm.otherWeight" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input type="textarea" v-model="dismantleForm.remark" rows="3" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="dismantleFormVisible = false">取消</el-button>
+      <el-button type="primary" @click="submitDismantle">保存</el-button>
+    </template>
+  </el-dialog>
 
   <el-dialog v-model="previewDocVisible" title="文档预览" width="980px">
     <iframe v-if="previewDocUrl" :src="previewDocUrl" style="width:100%;height:70vh;border:none;" />

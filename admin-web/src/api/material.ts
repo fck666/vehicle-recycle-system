@@ -21,15 +21,18 @@ export async function listMaterialTemplates(): Promise<MaterialTemplate[]> {
 }
 
 export async function upsertMaterialTemplate(payload: {
-  vehicleType: string
+  vehicleType?: string
+  scopeType: 'VEHICLE_TYPE' | 'VEHICLE'
+  scopeValue: string
   recoveryRatio: number
+  othersPricePerKgOverride?: number
   materials: MaterialRatioItem[]
 }): Promise<MaterialTemplate> {
   return requestJson<MaterialTemplate>('POST', '/api/material-templates', payload)
 }
 
-export async function deleteMaterialTemplate(vehicleType: string): Promise<void> {
-  await requestJson('DELETE', `/api/material-templates/${encodeURIComponent(vehicleType)}`)
+export async function deleteMaterialTemplateById(id: number): Promise<void> {
+  await requestJson('DELETE', `/api/material-templates/id/${id}`)
 }
 
 export async function listMaterialSources(): Promise<MaterialSourceConfig[]> {

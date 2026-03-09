@@ -13,6 +13,7 @@ spring:
   sql:
     init:
       mode: always # 始终尝试初始化，具体脚本由 profile 决定是否覆盖
+      continue-on-error: true # 允许脚本执行报错（例如重复添加列），保证本地开发幂等性
 
 server:
   port: 8090

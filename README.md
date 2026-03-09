@@ -190,6 +190,136 @@ python -m miit_vehicle_crawler.cli discover --output data/candidates.jsonl
 - 不要把任何数据库密码/Token 写进仓库：使用本地忽略文件或环境变量注入
 - 生产环境推荐使用 `prod` profile，通过环境变量提供 DB 连接（见 [application-prod.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application-prod.yaml)）
 
+## 生产发版（前后端）
+
+以下命令基于当前目录结构与服务器路径：
+- 服务器：`root@39.105.26.34`
+- 前端发布目录：`/var/www/html/admin/`
+- 后端 Jar 路径：`/root/backend-prod.jar`
+- 后端服务名：`backend-api`
+
+### 1) 本地构建与上传（前后端）
+
+```bash
+cd /Users/kkkfcc/Desktop/vehicle-recycle-system
+
+# 构建前端
+cd admin-web
+npm run build
+
+# 构建后端
+cd ../backend-api
+./mvnw -DskipTests package
+
+# 上传前端 dist
+scp -r ../admin-web/dist/* root@39.105.26.34:/var/www/html/admin/
+
+# 上传后端 jar
+scp ./target/backend-api-0.0.1-SNAPSHOT.jar root@39.105.26.34:/root/backend-prod.jar
+```
+
+### 2) 服务器重载服务
+
+```bash
+ssh root@39.105.26.34 '
+  sudo nginx -t &&
+  sudo systemctl reload nginx &&
+  sudo systemctl restart backend-api &&
+  sudo systemctl status backend-api --no-pager
+'
+```
+
+### 3) 发布后快速验收
+
+```bash
+# 后端接口不应出现 500
+curl -i http://39.105.26.34/api/auth/me
+
+# 查看后端最近日志
+ssh root@39.105.26.34 "sudo journalctl -u backend-api -n 120 --no-pager"
+```
+
+## 生产环境变量与 OSS AccessKey 切换
+
+`prod` 配置中的 OSS AK 读取环境变量：
+- `ALIYUN_ACCESS_KEY_ID`
+- `ALIYUN_ACCESS_KEY_SECRET`
+
+对应配置见 [application-prod.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application-prod.yaml)。
+
+### 1) 确认 systemd 使用的环境文件
+
+```bash
+sudo systemctl cat backend-api
+```
+
+应包含类似：
+
+```ini
+EnvironmentFile=/etc/backend-api/backend-api.env
+```
+
+### 2) 更新环境变量并重启
+
+```bash
+sudo nano /etc/backend-api/backend-api.env
+```
+
+写入或替换：
+
+```env
+ALIYUN_ACCESS_KEY_ID=你的新AK
+ALIYUN_ACCESS_KEY_SECRET=你的新SK
+```
+
+重载生效：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart backend-api
+sudo systemctl status backend-api --no-pager
+```
+
+### 3) 验证变量是否进入进程环境
+
+```bash
+PID=$(pgrep -f 'backend-api-0.0.1-SNAPSHOT.jar' | head -n1)
+sudo tr '\0' '\n' < /proc/$PID/environ | grep -E 'ALIYUN_ACCESS_KEY_ID|ALIYUN_ACCESS_KEY_SECRET|JWT_SECRET'
+```
+
+建议采用“先新增新 AK -> 重启验证 -> 再禁用旧 AK”的轮换流程，避免上传中断。
+
+## 生产数据库变更标准流程
+
+后续所有生产数据库结构变更，建议统一按“预检查 -> 迁移 -> 发布 -> 验证 -> 可回滚”执行。
+
+当前已落地的标准样例目录：
+- [prod-db-release/2026-03-09-material-template-scope](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope)
+
+样例文件：
+- [precheck.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/precheck.sql)
+- [migrate.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/migrate.sql)
+- [rollback.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/rollback.sql)
+- [发布说明 README](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/README.md)
+
+推荐执行顺序：
+1. 备份生产数据库（全库或目标表）。
+2. 执行 `precheck.sql`，确认关键指标满足通过标准。
+3. 执行 `migrate.sql` 完成结构/数据迁移。
+4. 发布后端应用版本（与新结构匹配）。
+5. 发布后再次执行 `precheck.sql` + 业务抽样验证。
+6. 如需回退，先回退应用版本，再执行 `rollback.sql`。
+
+通过标准（按样例）：
+- `duplicated_scope_count = 0`
+- `null_scope_value_after_backfill = 0`
+- `empty_vehicle_type_count` 若 > 0，需先确认数据清洗方案
+
+落地要求（后续每次 DB 变更都遵循）：
+- 在 `backend-api/docs/prod-db-release/<日期>-<主题>/` 新建同结构目录。
+- 至少包含 `precheck.sql`、`migrate.sql`、`rollback.sql`、`README.md`。
+- 发布单中记录执行人、执行时间、关键 SQL 结果、回滚条件与结论。
+
 ## 后续：微信小程序对接建议
 
 - 小程序侧主要对接后端接口：车辆列表、车型详情（含文档/图片）、估值、价格展示

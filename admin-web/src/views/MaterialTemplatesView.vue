@@ -2,9 +2,9 @@
 import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { MaterialRatioItem, MaterialTemplate } from '../api/types'
-import { deleteMaterialTemplate, listMaterialPrices, listMaterialSources, listMaterialTemplates, upsertMaterialTemplate } from '../api/material'
-import { getVehicleFacets } from '../api/vehicles'
+import type { MaterialRatioItem, MaterialTemplate, VehicleModel } from '../api/types'
+import { deleteMaterialTemplateById, listMaterialPrices, listMaterialSources, listMaterialTemplates, upsertMaterialTemplate } from '../api/material'
+import { getVehicleFacets, searchVehicles } from '../api/vehicles'
 
 const OTHERS = 'others'
 
@@ -12,13 +12,16 @@ const loading = ref(false)
 const items = ref<MaterialTemplate[]>([])
 const materialOptions = ref<Array<{ type: string; label: string }>>([])
 const vehicleTypeOptions = ref<string[]>([])
+const vehicleOptions = ref<VehicleModel[]>([])
 
 const dialogVisible = ref(false)
 const form = reactive<{
-  vehicleType: string
+  scopeType: 'VEHICLE_TYPE' | 'VEHICLE'
+  scopeValue: string
   materials: MaterialRatioItem[]
   recoveryRatio: number | null
-}>({ vehicleType: '', materials: [], recoveryRatio: null })
+  othersPricePerKgOverride: number | null
+}>({ scopeType: 'VEHICLE_TYPE', scopeValue: '', materials: [], recoveryRatio: null, othersPricePerKgOverride: null })
 
 const auth = useAuthStore()
 const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERATOR'].includes(r)))
@@ -26,11 +29,12 @@ const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERA
 async function load() {
   loading.value = true
   try {
-    const [templates, prices, sources, facets] = await Promise.all([
+    const [templates, prices, sources, facets, vehiclesPage] = await Promise.all([
       listMaterialTemplates(),
       listMaterialPrices(),
       listMaterialSources(),
       getVehicleFacets(),
+      searchVehicles({ page: 0, size: 200 }),
     ])
     items.value = templates
     const byType = new Map<string, string>()
@@ -43,22 +47,27 @@ async function load() {
       materialOptions.value.push({ type: OTHERS, label: '其余(others)' })
     }
     vehicleTypeOptions.value = facets.vehicleTypes ?? []
+    vehicleOptions.value = vehiclesPage.content ?? []
   } finally {
     loading.value = false
   }
 }
 
 function openCreate() {
-  form.vehicleType = ''
+  form.scopeType = 'VEHICLE_TYPE'
+  form.scopeValue = ''
   form.materials = []
   form.recoveryRatio = null
+  form.othersPricePerKgOverride = null
   dialogVisible.value = true
 }
 
 function openEdit(row: MaterialTemplate) {
-  form.vehicleType = row.vehicleType
+  form.scopeType = row.scopeType ?? 'VEHICLE_TYPE'
+  form.scopeValue = row.scopeValue ?? row.vehicleType ?? ''
   form.materials = (row.materials || []).map(m => ({ materialType: m.materialType, ratio: m.ratio }))
   form.recoveryRatio = row.recoveryRatio
+  form.othersPricePerKgOverride = row.othersPricePerKgOverride ?? null
   dialogVisible.value = true
 }
 
@@ -97,13 +106,17 @@ async function submit() {
     ? [...withoutOthers, ...(othersRatio.value > 0 ? [{ materialType: OTHERS, ratio: othersRatio.value }] : [])]
     : materialPayload
   const sum = finalPayload.reduce((acc, x) => acc + x.ratio, 0)
-  if (!form.vehicleType.trim() || form.recoveryRatio == null || finalPayload.length === 0 || sum <= 0 || sum > 1) {
+  if (!form.scopeValue.trim() || form.recoveryRatio == null || finalPayload.length === 0 || sum <= 0 || sum > 1) {
     ElMessage.warning('请检查车型、材料占比，且占比总和需大于0且不超过1')
     return
   }
+  const scopeValue = form.scopeValue.trim()
   await upsertMaterialTemplate({
-    vehicleType: form.vehicleType.trim(),
+    scopeType: form.scopeType,
+    scopeValue,
+    vehicleType: form.scopeType === 'VEHICLE_TYPE' ? scopeValue : undefined,
     recoveryRatio: form.recoveryRatio,
+    othersPricePerKgOverride: form.othersPricePerKgOverride ?? undefined,
     materials: finalPayload,
   })
   ElMessage.success('已保存')
@@ -112,8 +125,8 @@ async function submit() {
 }
 
 async function onDelete(row: MaterialTemplate) {
-  await ElMessageBox.confirm(`确认删除模板 ${row.vehicleType} 吗？`, '删除确认', { type: 'warning' })
-  await deleteMaterialTemplate(row.vehicleType)
+  await ElMessageBox.confirm(`确认删除模板 ${templateScopeText(row)} 吗？`, '删除确认', { type: 'warning' })
+  await deleteMaterialTemplateById(row.id)
   ElMessage.success('已删除')
   load()
 }
@@ -125,6 +138,15 @@ function materialLabel(type: string) {
 
 function materialText(row: MaterialTemplate) {
   return (row.materials || []).map(m => `${materialLabel(m.materialType)}:${m.ratio}`).join('，')
+}
+
+function templateScopeText(row: MaterialTemplate) {
+  if (row.scopeType === 'VEHICLE') {
+    const hit = vehicleOptions.value.find(v => String(v.id) === row.scopeValue)
+    if (hit) return `车型#${hit.id} ${hit.brand} ${hit.model}(${hit.modelYear})`
+    return `车型#${row.scopeValue}`
+  }
+  return `类型:${row.scopeValue || row.vehicleType || ''}`
 }
 
 load()
@@ -143,10 +165,13 @@ load()
     </template>
 
     <el-table :data="items" v-loading="loading" stripe>
-      <el-table-column prop="vehicleType" label="车型类型" width="160" />
+      <el-table-column label="模板范围" min-width="220">
+        <template #default="{ row }">{{ templateScopeText(row) }}</template>
+      </el-table-column>
       <el-table-column label="材料占比" min-width="380">
         <template #default="{ row }">{{ materialText(row) }}</template>
       </el-table-column>
+      <el-table-column prop="othersPricePerKgOverride" label="其余单价覆盖(元/kg)" width="170" />
       <el-table-column prop="recoveryRatio" label="回收系数" width="120" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
@@ -159,9 +184,25 @@ load()
 
   <el-dialog v-model="dialogVisible" title="模板编辑" width="760px">
     <el-form label-width="110px">
-      <el-form-item label="车型类型" required>
-        <el-select v-model="form.vehicleType" filterable allow-create default-first-option style="width:100%;">
+      <el-form-item label="模板范围" required>
+        <el-radio-group v-model="form.scopeType">
+          <el-radio-button label="VEHICLE_TYPE">按车型类型</el-radio-button>
+          <el-radio-button label="VEHICLE">按具体车型</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item v-if="form.scopeType === 'VEHICLE_TYPE'" label="车型类型" required>
+        <el-select v-model="form.scopeValue" filterable allow-create default-first-option style="width:100%;">
           <el-option v-for="v in vehicleTypeOptions" :key="v" :label="v" :value="v" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-else label="具体车型" required>
+        <el-select v-model="form.scopeValue" filterable style="width:100%;">
+          <el-option
+            v-for="v in vehicleOptions"
+            :key="v.id"
+            :label="`#${v.id} ${v.brand} ${v.model} (${v.modelYear})`"
+            :value="String(v.id)"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="材料占比" required>
@@ -189,6 +230,9 @@ load()
       </el-form-item>
       <el-form-item label="回收系数" required>
         <el-input-number v-model="form.recoveryRatio" :min="0" :max="1" :precision="4" :step="0.01" />
+      </el-form-item>
+      <el-form-item label="其余单价覆盖">
+        <el-input-number v-model="form.othersPricePerKgOverride" :min="0" :precision="2" :step="0.1" />
       </el-form-item>
     </el-form>
     <template #footer>
