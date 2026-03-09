@@ -584,7 +584,7 @@ loadFacets()
     </div>
   </el-drawer>
 
-  <el-dialog v-model="dismantleVisible" title="拆解实测记录" width="800px">
+  <el-dialog v-model="dismantleVisible" title="拆解记录" width="900px">
     <div style="margin-bottom:12px;text-align:right;">
       <el-button type="primary" @click="openDismantleForm">新增记录</el-button>
     </div>
