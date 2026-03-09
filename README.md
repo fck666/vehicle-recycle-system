@@ -1,204 +1,14 @@
-# 车辆回收估值系统（Vehicle Recycle System）
-
-本仓库用于构建“车辆回收估值”相关的后端服务与数据采集工具，目标是把车辆基础信息、材料回收单价、车型技术参数（工信部 PDF）统一沉淀到数据库，并提供估值 API 供前端（含后续微信小程序）调用。
-
-## 功能概览
-
-- 车辆基础库：车型基础信息、图片、PDF 文档元数据
-- 材料价格库：steel/aluminum/copper/battery/plastic/rubber 最新参考价入库，并保留来源与抓取元数据
-- 车型参数入库：支持批量 upsert 车型参数，并把原始解析信息写入 `spec_raw_json`
-- 残值估算：按车型材料配比 + 材料单价 + 回收系数计算估值，并记录历史
-
-## 仓库结构
-
-- 后端 API（Spring Boot）：[backend-api](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api)
-- 管理后台（Vue）：[admin-web](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/admin-web)
-- 材料价格爬虫（生意社）：[python-scraper](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/python-scraper)
-- 工信部车型参数 PDF 采集/解析/入库：[python-miit-vehicle-crawler](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/python-miit-vehicle-crawler)
-- 需求文档：[docs](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/docs)
-
-## 技术栈
-
-- 后端：Java 17、Spring Boot、Spring Web、Spring Data JPA、MySQL
-- Python 工具：
-  - 价格爬虫：requests
-  - 工信部 PDF：playwright（浏览器会话/人机协同验证码）、pdfplumber（文本层解析）、requests（入库）
-
-## 快速开始（本地开发）
-
-### 1) 准备数据库
-
-- 本地安装 MySQL，并创建数据库 `scrap_system`
-- 后端默认使用 `dev,local` profile（见 [application.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application.yaml)）
-
-配置数据库连接：
-- `backend-api/src/main/resources/application-dev.yaml`：URL/用户名
-- `backend-api/src/main/resources/application-local.yaml`：本地密码（可直接写明文供本机使用；也支持用环境变量 `DB_PASSWORD` 覆盖；该文件在根目录 .gitignore 中已忽略）
-
-### 2) 启动后端
-
-进入后端目录启动：
-
-```bash
-cd backend-api
-./mvnw spring-boot:run
-```
-
-默认端口：`http://localhost:8090`
-
-默认会初始化一个管理账号（非 test 环境）：
-- 用户名：`fcc`（可通过环境变量 `ADMIN_USERNAME` 覆盖）
-- 密码：`12345`（开发/本地默认；生产环境请通过环境变量 `ADMIN_PASSWORD` 显式设置）
-
-JWT 密钥：
-- 开发环境默认从 `JWT_SECRET` 读取（未设置会使用开发用默认值）
-- 生产环境必须设置 `JWT_SECRET`
-
-开发环境会：
-- 自动建表/更新表结构（`ddl-auto=update`）
-- 初始化基础数据（非 test 环境）：车辆样例、材料模板、材料价格（见 [DataInitializer.java](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/java/com/scrap_system/backend_api/config/DataInitializer.java)）
-
-### 2.1) 启动管理后台（Vue）
-
-要求：后端先启动在 `http://localhost:8090`。
-
-```bash
-cd admin-web
-npm install
-npm run dev
-```
-
-本地访问：`http://localhost:5174/`（开发态已配置 `/api` 代理到后端）。
-
-管理后台能力：
-- 车型管理、材料价格、估值模板维护
-- 抓取任务记录查看（材料抓取/车型入库）
-- 用户管理（仅 ADMIN 可见/可操作）
-- 车型关联（方案C）：导入外部车型版本库并半自动关联通用名称（仅 ADMIN）
-
-### 3) 跑材料价格爬虫（生意社）
-
-```bash
-cd python-scraper
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-python -m price_crawler.cli run
-```
-
-- 默认写入后端：`http://localhost:8090/api/material-prices/batch`
-- 支持 `--dry-run` 仅打印不写入
-- 可通过环境变量覆盖：
-  - `BACKEND_BASE_URL`（默认 http://localhost:8090）
-  - `BACKEND_TOKEN`（必填：后端写入接口已开启 JWT 鉴权；建议用 `clientType=SERVICE` 生成 token，避免影响 PC 登录）
-
-材料与数据源映射见：[ppi_reference.py](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/python-scraper/price_crawler/sources/ppi_reference.py)
-
-后端也内置了“每日定时抓取生意社材料价格并入库”的定时任务（用于部署环境免装 Python）：
-- 配置项：`app.material-price-fetch.enabled/cron/zone`（见 [application.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application.yaml)）
-- 默认 cron：每天 02:10（Asia/Shanghai）
-
-### 4) 跑工信部车型参数 PDF（人机协同）
-
-工信部查询入口（来源站点）：
-
-- `https://service.miit-eidc.org.cn/miitxxgk/gonggao/xxgk/index`
-
-安装依赖（首次需安装浏览器）：
-
-```bash
-cd python-miit-vehicle-crawler
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m playwright install chromium
-```
-
-两种常用方式：
-
-1）你已经有 PDF URL 列表（`urls.txt`，每行一个 URL）
-
-```bash
-python -m miit_vehicle_crawler.cli download --urls urls.txt
-python -m miit_vehicle_crawler.cli parse
-python -m miit_vehicle_crawler.cli upsert --backend http://localhost:8090
-```
-
-2）人机协同筛选（会打开浏览器，你手动筛选/搜索后回车导出候选链接）
-
-```bash
-python -m miit_vehicle_crawler.cli discover --output data/candidates.jsonl
-```
-
-说明：
-- 下载阶段若检测到验证码，会提示你在浏览器完成验证后继续
-- PDF 归档默认落本地 `data/pdfs/<date>/<sha256>.pdf`，并计算 sha256 用于去重
-
-## 后端 API 速览
-
-### 材料价格
-
-- `GET /api/material-prices`：列表
-- `GET /api/material-prices/{type}`：按 type 查询
-- `POST /api/material-prices`：单条 upsert
-- `POST /api/material-prices/batch`：批量 upsert
-
-字段约定（核心字段）：
-- `type`：steel/aluminum/copper/battery/plastic/rubber
-- `pricePerKg`：统一写入“元/kg”字段；其中 battery 目前在估值中按“元/kWh”使用（见下方估值说明）
-- `sourceName/sourceUrl/fetchedAt/effectiveDate/unit/currency/rawPayload`：用于追溯来源与抓取过程
-
-实现参考：[MaterialPriceController.java](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/java/com/scrap_system/backend_api/controller/MaterialPriceController.java)
-
-### 车型参数与文档
-
-- `POST /api/vehicle-specs/batch`：批量 upsert 车型参数（按 productId 优先、否则 productNo）
-- `POST /api/vehicle-documents/batch`：批量 upsert 车型 PDF 文档元数据（按 productId/productNo 关联车型，按 sha256/docUrl 去重）
-- `POST /api/vehicles/{vehicleId}/documents`：单车添加文档（需已知 vehicleId）
-
-实现参考：
-- [VehicleSpecController.java](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/java/com/scrap_system/backend_api/controller/VehicleSpecController.java)
-- [VehicleDocumentBatchController.java](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/java/com/scrap_system/backend_api/controller/VehicleDocumentBatchController.java)
-
-### 估值
-
-- `POST /api/valuation/{vehicleId}`：使用车型表参数 + 模板配比估值
-- `POST /api/valuation/{vehicleId}/precise`：使用请求体提供的更精确参数估值
-- `GET /api/valuation/history?vehicleId=...`：估值历史
-
-估值逻辑（简化）：
-- steel/aluminum/copper：按 `整备质量 * 材料比例 * 单价(元/kg)`
-- battery：若 `batteryKwh > 0`，按 `batteryKwh * 单价(元/kWh)`
-- 总价：`(steelValue + aluminumValue + copperValue + batteryValue) * recoveryRatio`
-
-实现参考：[ValuationService.java](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/java/com/scrap_system/backend_api/service/ValuationService.java)
-
-## 数据表与关键字段
-
-初始化表结构见：[schema.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/schema.sql)
-
-- `vehicle_model`：车型主表（支持 `spec_raw_json` 存放原始解析信息）
-- `material_template`：车型材料配比模板（steel/aluminum/copper/recovery）
-- `material_price`：材料价格最新表（含来源/日期/原始载荷 raw_payload）
-- `valuation_record`：估值结果历史
-- `vehicle_image`：车辆图片
-- `vehicle_document`：车辆文档（MIIT PDF 等）
-
-## 配置与安全
-
-- 不要把任何数据库密码/Token 写进仓库：使用本地忽略文件或环境变量注入
-- 生产环境推荐使用 `prod` profile，通过环境变量提供 DB 连接（见 [application-prod.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application-prod.yaml)）
-
-## 生产发版（前后端）
+## 生产发版（数据库 + 后端 + 前端）
 
 以下命令基于当前目录结构与服务器路径：
 - 服务器：`root@39.105.26.34`
 - 前端发布目录：`/var/www/html/admin/`
 - 后端 Jar 路径：`/root/backend-prod.jar`
 - 后端服务名：`backend-api`
+- MySQL 容器名：`mysql-prod`
+- 生产库名：`scrap_system`
 
-### 1) 本地构建与上传（前后端）
+### 1) 本地构建（前后端）
 
 ```bash
 cd /Users/kkkfcc/Desktop/vehicle-recycle-system
@@ -210,6 +20,12 @@ npm run build
 # 构建后端
 cd ../backend-api
 ./mvnw -DskipTests package
+```
+
+### 2) 上传前后端产物
+
+```bash
+cd /Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api
 
 # 上传前端 dist
 scp -r ../admin-web/dist/* root@39.105.26.34:/var/www/html/admin/
@@ -218,7 +34,47 @@ scp -r ../admin-web/dist/* root@39.105.26.34:/var/www/html/admin/
 scp ./target/backend-api-0.0.1-SNAPSHOT.jar root@39.105.26.34:/root/backend-prod.jar
 ```
 
-### 2) 服务器重载服务
+### 3) 上传数据库发布脚本（若服务器未准备）
+
+```bash
+ssh root@39.105.26.34 "mkdir -p /root/vehicle-recycle-system/backend-api/docs/prod-db-release"
+
+scp -r /Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope \
+  root@39.105.26.34:/root/vehicle-recycle-system/backend-api/docs/prod-db-release/
+```
+
+### 4) 服务器执行数据库预检查与迁移（Docker MySQL）
+
+**安全提示**：使用 `export` 临时注入密码，避免明文留痕。
+
+```bash
+ssh root@39.105.26.34
+cd /root/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope
+
+# 4.1 临时加载数据库密码到环境变量（执行完会自动清除）
+export $(grep DB_PASSWORD /etc/backend-api/backend-api.env | xargs)
+
+# 4.2 备份数据库
+mkdir -p /root/db-backup
+docker exec mysql-prod sh -c \
+  'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --quick --routines --triggers --databases scrap_system' \
+  > /root/db-backup/scrap_system_$(date +%F_%H%M%S).sql
+gzip -9 /root/db-backup/scrap_system_*.sql
+
+# 4.3 预检查（确认旧数据状态）
+docker exec -i mysql-prod mysql -uroot -p"$DB_PASSWORD" scrap_system < precheck.sql
+
+# 4.4 执行迁移
+docker exec -i mysql-prod mysql -uroot -p"$DB_PASSWORD" scrap_system < migrate.sql
+
+# 4.5 迁移后复查（验证新结构与回填）
+docker exec -i mysql-prod mysql -uroot -p"$DB_PASSWORD" scrap_system < postcheck.sql
+
+# 4.6 清除环境变量
+unset DB_PASSWORD
+```
+
+### 5) 服务器重载应用服务
 
 ```bash
 ssh root@39.105.26.34 '
@@ -229,7 +85,7 @@ ssh root@39.105.26.34 '
 '
 ```
 
-### 3) 发布后快速验收
+### 6) 发布后快速验收
 
 ```bash
 # 后端接口不应出现 500
@@ -239,97 +95,23 @@ curl -i http://39.105.26.34/api/auth/me
 ssh root@39.105.26.34 "sudo journalctl -u backend-api -n 120 --no-pager"
 ```
 
-## 生产环境变量与 OSS AccessKey 切换
-
-`prod` 配置中的 OSS AK 读取环境变量：
-- `ALIYUN_ACCESS_KEY_ID`
-- `ALIYUN_ACCESS_KEY_SECRET`
-
-对应配置见 [application-prod.yaml](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/src/main/resources/application-prod.yaml)。
-
-### 1) 确认 systemd 使用的环境文件
+### 7) 如需回滚（先回滚应用，再回滚数据库）
 
 ```bash
-sudo systemctl cat backend-api
+# 7.1 先回滚后端/前端到上一版产物（按你的备份路径恢复）
+
+# 7.2 再执行数据库回滚
+ssh root@39.105.26.34 '
+  cd /root/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope &&
+  export $(grep DB_PASSWORD /etc/backend-api/backend-api.env | xargs) &&
+  docker exec -i mysql-prod mysql -uroot -p"$DB_PASSWORD" scrap_system < rollback.sql &&
+  unset DB_PASSWORD
+'
 ```
-
-应包含类似：
-
-```ini
-EnvironmentFile=/etc/backend-api/backend-api.env
-```
-
-### 2) 更新环境变量并重启
-
-```bash
-sudo nano /etc/backend-api/backend-api.env
-```
-
-写入或替换：
-
-```env
-ALIYUN_ACCESS_KEY_ID=你的新AK
-ALIYUN_ACCESS_KEY_SECRET=你的新SK
-```
-
-重载生效：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart backend-api
-sudo systemctl status backend-api --no-pager
-```
-
-### 3) 验证变量是否进入进程环境
-
-```bash
-PID=$(pgrep -f 'backend-api-0.0.1-SNAPSHOT.jar' | head -n1)
-sudo tr '\0' '\n' < /proc/$PID/environ | grep -E 'ALIYUN_ACCESS_KEY_ID|ALIYUN_ACCESS_KEY_SECRET|JWT_SECRET'
-```
-
-建议采用“先新增新 AK -> 重启验证 -> 再禁用旧 AK”的轮换流程，避免上传中断。
 
 ## 生产数据库变更标准流程
 
 后续所有生产数据库结构变更，建议统一按“预检查 -> 迁移 -> 发布 -> 验证 -> 可回滚”执行。
+标准流程文档与脚本模板见：[prod-db-release/README.md](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/README.md)
 
-当前已落地的标准样例目录：
-- [prod-db-release/2026-03-09-material-template-scope](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope)
-
-样例文件：
-- [precheck.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/precheck.sql)
-- [migrate.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/migrate.sql)
-- [rollback.sql](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/rollback.sql)
-- [发布说明 README](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope/README.md)
-
-推荐执行顺序：
-1. 备份生产数据库（全库或目标表）。
-2. 执行 `precheck.sql`，确认关键指标满足通过标准。
-3. 执行 `migrate.sql` 完成结构/数据迁移。
-4. 发布后端应用版本（与新结构匹配）。
-5. 发布后再次执行 `precheck.sql` + 业务抽样验证。
-6. 如需回退，先回退应用版本，再执行 `rollback.sql`。
-
-通过标准（按样例）：
-- `duplicated_scope_count = 0`
-- `null_scope_value_after_backfill = 0`
-- `empty_vehicle_type_count` 若 > 0，需先确认数据清洗方案
-
-落地要求（后续每次 DB 变更都遵循）：
-- 在 `backend-api/docs/prod-db-release/<日期>-<主题>/` 新建同结构目录。
-- 至少包含 `precheck.sql`、`migrate.sql`、`rollback.sql`、`README.md`。
-- 发布单中记录执行人、执行时间、关键 SQL 结果、回滚条件与结论。
-
-## 后续：微信小程序对接建议
-
-- 小程序侧主要对接后端接口：车辆列表、车型详情（含文档/图片）、估值、价格展示
-- 建议增加的后端能力：
-  - 鉴权（小程序登录态/JWT）
-  - 车辆搜索与分页
-  - 估值参数校验与单位明确化（尤其 battery 单价的单位语义）
-
-## 常见问题（Troubleshooting）
-
-- MySQL 连接失败：检查数据库是否创建、端口/用户名/密码是否正确，以及 `dev,local` profile 是否加载
-- 工信部 PDF 下载卡在验证码：属于人机协同设计的一部分；在浏览器完成验证后回到命令行继续
-- PDF 解析字段缺失：扫描版 PDF 可能无文本层；当前解析器以文本层为主，OCR 可作为后续增强方向
+## 生产环境变量与 OSS AccessKey 切换

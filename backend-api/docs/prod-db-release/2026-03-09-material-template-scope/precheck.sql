@@ -1,28 +1,18 @@
 SELECT @@version AS mysql_version;
 
-SELECT
-  COUNT(*) AS duplicated_scope_count
-FROM (
-  SELECT scope_type, scope_value, COUNT(*) AS c
-  FROM material_template
-  WHERE scope_type IS NOT NULL AND scope_value IS NOT NULL
-  GROUP BY scope_type, scope_value
-  HAVING COUNT(*) > 1
-) t;
-
+-- 检查是否有空的 vehicle_type（迁移时会被跳过，需要关注）
 SELECT
   COUNT(*) AS empty_vehicle_type_count
 FROM material_template
 WHERE (vehicle_type IS NULL OR TRIM(vehicle_type) = '');
 
+-- 检查是否有重复的 vehicle_type（迁移后会变成重复的 scope_value，导致唯一索引创建失败）
 SELECT
-  COUNT(*) AS null_scope_value_after_backfill
-FROM material_template
-WHERE (scope_value IS NULL OR TRIM(scope_value) = '');
-
-SELECT
-  COUNT(*) AS others_rows_without_price
-FROM material_template_item i
-JOIN material_template t ON t.id = i.template_id
-WHERE i.material_type = 'others'
-  AND t.others_price_per_kg_override IS NULL;
+  COUNT(*) AS duplicated_vehicle_type_count
+FROM (
+  SELECT vehicle_type, COUNT(*) AS c
+  FROM material_template
+  WHERE vehicle_type IS NOT NULL AND TRIM(vehicle_type) <> ''
+  GROUP BY vehicle_type
+  HAVING COUNT(*) > 1
+) t;

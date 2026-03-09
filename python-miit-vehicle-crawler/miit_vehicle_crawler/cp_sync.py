@@ -375,6 +375,24 @@ def sync_cp(
                         # cpid is 'productId' (e.g. AB662101)
                         # clxh is 'productNo' (e.g. FV6506HADEG)
                         existing_vehicle = _lookup_vehicle(session, backend, it.cpid, it.clxh)
+                        
+                        # Early skip optimization: if we have HTML and at least one image, skip page visit
+                        if existing_vehicle:
+                            existing_images = existing_vehicle.get("images") or []
+                            existing_docs = existing_vehicle.get("documents") or []
+                            has_html = any(d.get("docType") == "MIIT_HTML" for d in existing_docs)
+                            
+                            # Fast skip: assume if we have HTML and some images, it's likely complete.
+                            # We can't know the exact expected image count without visiting the page,
+                            # but usually if we have > 0 images and the HTML doc, it was a successful crawl.
+                            if has_html and len(existing_images) > 0:
+                                log("miit.cp.exists.fast_skip", cpid=it.cpid, vid=existing_vehicle.get("id"), actual_images=len(existing_images))
+                                skipped += 1
+                                if on_progress:
+                                    on_progress({"stage": "SKIP", "idx": idx, "total": len(items), "reason": "exists_fast_skip"})
+                                success = True
+                                break # Break retry loop
+                                
                     except Exception as e:
                         log("miit.cp.lookup.error", err=str(e))
 
