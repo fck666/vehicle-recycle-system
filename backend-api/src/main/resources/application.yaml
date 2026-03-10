@@ -10,6 +10,13 @@ spring:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: 5s
   sql:
     init:
       mode: always # 始终尝试初始化，具体脚本由 profile 决定是否覆盖
@@ -19,6 +26,11 @@ server:
   port: 8090
 
 app:
+  security:
+    jwt:
+      secret: r5l0h4jdVSUTwC6AHU9vUiQ8xWOi80I69we3x2wWxHjdD3ZbNYaEfGWECjD4ebKlbgJr-OXAwhltfxrNbqIWyw
+      ttl-seconds: 86400
+      issuer: vehicle-recycle-system
   material-price-fetch:
     enabled: true
     cron: "0 30 9,15 * * MON-FRI"

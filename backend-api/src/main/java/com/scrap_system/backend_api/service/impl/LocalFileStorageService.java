@@ -86,4 +86,9 @@ public class LocalFileStorageService implements FileStorageService {
             // Ignore error
         }
     }
+
+    @Override
+    public String generatePresignedUrl(String url, int expirationSeconds) {
+        return url;
+    }
 }

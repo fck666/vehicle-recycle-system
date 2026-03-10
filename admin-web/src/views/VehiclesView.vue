@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Page, VehicleDocument, VehicleImage, VehicleModel, VehicleUpsertRequest } from '../api/types'
 import { createVehicle, deleteVehicle, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
-import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage } from '../api/vehicleMedia'
+import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage, getHtmlContent, getSignedUrl } from '../api/vehicleMedia'
 import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
 import type { VehicleDismantleRecord } from '../api/types'
 
@@ -232,9 +232,61 @@ async function openMedia(row: VehicleModel) {
   }
 }
 
-function showDoc(url: string) {
-  previewDocUrl.value = url
-  previewDocVisible.value = true
+async function showDoc(url: string) {
+  try {
+    if (isHtmlUrl(url)) {
+      const signedUrl = await getSignedUrl(url)
+      const html = await getHtmlContent(url)
+      previewDocUrl.value = buildHtmlBlobUrl(html, signedUrl)
+    } else {
+      const signedUrl = await getSignedUrl(url)
+      previewDocUrl.value = signedUrl
+    }
+    previewDocVisible.value = true
+  } catch {
+    ElMessage.error('获取预览链接失败')
+  }
+}
+
+async function openDoc(url: string) {
+  try {
+    if (isHtmlUrl(url)) {
+      const signedUrl = await getSignedUrl(url)
+      const html = await getHtmlContent(url)
+      const blobUrl = buildHtmlBlobUrl(html, signedUrl)
+      window.open(blobUrl, '_blank')
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+    } else {
+      const signed = await getSignedUrl(url)
+      window.open(signed, '_blank')
+    }
+  } catch {
+    ElMessage.error('打开文件失败')
+  }
+}
+
+watch(previewDocVisible, (v) => {
+  if (!v && previewDocUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(previewDocUrl.value)
+    previewDocUrl.value = ''
+  }
+})
+
+function isHtmlUrl(url: string): boolean {
+  const clean = (url.split('?')[0] ?? '').toLowerCase()
+  return clean.endsWith('.html') || clean.endsWith('.htm')
+}
+
+function buildHtmlBlobUrl(rawHtml: string, baseUrl: string): string {
+  const baseTag = `<base href="${baseUrl}">`
+  let html = rawHtml
+  html = html.replace(/http:\/\//gi, 'https://')
+  if (html.includes('<head>')) {
+    html = html.replace('<head>', `<head>${baseTag}<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">`)
+  } else {
+    html = `<html><head>${baseTag}<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests"></head><body>${html}</body></html>`
+  }
+  return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
 }
 
 async function loadDismantleRecords(vehicleId: number) {
@@ -451,7 +503,7 @@ loadFacets()
       <el-table-column label="HTML 存档" width="160">
         <template #default="{ row }">
           <div v-if="row.documents && row.documents.length > 0">
-            <el-link :href="row.documents[0].docUrl" target="_blank" underline="never" type="primary">查看网页</el-link>
+            <el-link @click="openDoc(row.documents[0].docUrl)" underline="never" type="primary">查看网页</el-link>
             <el-link v-if="row.documents[0].sourceUrl" :href="row.documents[0].sourceUrl" target="_blank" underline="never" type="warning" style="margin-left:8px;font-size:12px;">来源</el-link>
           </div>
           <span v-else style="color:var(--el-text-color-placeholder);">无</span>
@@ -579,7 +631,7 @@ loadFacets()
           <el-table-column prop="fetchedAt" label="抓取时间" width="190" />
           <el-table-column label="链接" min-width="240">
             <template #default="{ row }">
-              <el-link :href="row.docUrl" target="_blank" underline="never">打开</el-link>
+              <el-link @click="openDoc(row.docUrl)" underline="never" type="primary">打开</el-link>
               <el-button size="small" style="margin-left:8px;" @click="showDoc(row.docUrl)">预览</el-button>
             </template>
           </el-table-column>

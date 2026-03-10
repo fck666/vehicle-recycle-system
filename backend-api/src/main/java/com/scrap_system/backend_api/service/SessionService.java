@@ -3,21 +3,30 @@ package com.scrap_system.backend_api.service;
 import com.scrap_system.backend_api.model.UserSession;
 import com.scrap_system.backend_api.repository.UserSessionRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SessionService {
 
     private final UserSessionRepository userSessionRepository;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${app.security.jwt.ttl-seconds:86400}")
     private long ttlSeconds;
+
+    private String getRedisKey(Long userId, String clientType) {
+        return "auth:session:" + userId + ":" + clientType;
+    }
 
     @Transactional
     public UserSession issue(Long userId, String clientType) {
@@ -27,6 +36,7 @@ public class SessionService {
         String sessionId = UUID.randomUUID().toString();
         String tokenId = UUID.randomUUID().toString();
 
+        // Save to DB
         UserSession s = userSessionRepository.findByUserIdAndClientType(userId, ct).orElseGet(UserSession::new);
         s.setUserId(userId);
         s.setClientType(ct);
@@ -35,25 +45,73 @@ public class SessionService {
         s.setIssuedAt(now);
         s.setExpiresAt(exp);
         s.setRevokedAt(null);
-        return userSessionRepository.save(s);
+        UserSession saved = userSessionRepository.save(s);
+
+        // Save to Redis (Best Effort)
+        try {
+            String redisKey = getRedisKey(userId, ct);
+            String redisValue = sessionId + ":" + tokenId;
+            redisTemplate.opsForValue().set(redisKey, redisValue, ttlSeconds, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("Failed to save session to Redis, but DB saved successfully. userId={}", userId, e);
+        }
+
+        return saved;
     }
 
     @Transactional(readOnly = true)
     public boolean isTokenActive(Long userId, String clientType, String sessionId, String tokenId) {
         if (userId == null) return false;
         String ct = normalizeClientType(clientType);
+        String redisKey = getRedisKey(userId, ct);
+        
+        // Check Redis first
+        try {
+            String cached = redisTemplate.opsForValue().get(redisKey);
+            if (cached != null) {
+                 String expected = sessionId + ":" + tokenId;
+                 return cached.equals(expected);
+            }
+        } catch (Exception e) {
+            log.warn("Redis is unavailable, falling back to DB check. userId={}", userId, e);
+        }
+
+        // Fallback to DB
         return userSessionRepository.findByUserIdAndClientType(userId, ct)
                 .filter(s -> s.getRevokedAt() == null)
                 .filter(s -> s.getExpiresAt() != null && s.getExpiresAt().isAfter(LocalDateTime.now()))
                 .filter(s -> sessionId != null && sessionId.equals(s.getSessionId()))
                 .filter(s -> tokenId != null && tokenId.equals(s.getTokenId()))
-                .isPresent();
+                .map(s -> {
+                    // Re-populate Redis if valid (Best Effort)
+                    try {
+                        long remainingTtl = java.time.Duration.between(LocalDateTime.now(), s.getExpiresAt()).getSeconds();
+                        if (remainingTtl > 0) {
+                             String redisValue = s.getSessionId() + ":" + s.getTokenId();
+                             redisTemplate.opsForValue().set(redisKey, redisValue, remainingTtl, TimeUnit.SECONDS);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to repopulate Redis cache. userId={}", userId, e);
+                    }
+                    return true;
+                })
+                .orElse(false);
     }
 
     @Transactional
     public void revoke(Long userId, String clientType) {
         if (userId == null) return;
         String ct = normalizeClientType(clientType);
+        
+        // Remove from Redis (Best Effort)
+        try {
+            String redisKey = getRedisKey(userId, ct);
+            redisTemplate.delete(redisKey);
+        } catch (Exception e) {
+            log.error("Failed to delete session from Redis. userId={}", userId, e);
+        }
+
+        // Update DB
         userSessionRepository.findByUserIdAndClientType(userId, ct).ifPresent(s -> {
             s.setRevokedAt(LocalDateTime.now());
             userSessionRepository.save(s);

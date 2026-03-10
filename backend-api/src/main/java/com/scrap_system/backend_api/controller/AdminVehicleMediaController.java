@@ -11,10 +11,17 @@ import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import com.scrap_system.backend_api.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/admin/vehicles")
@@ -128,6 +135,40 @@ public class AdminVehicleMediaController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/media/sign")
+    public ResponseEntity<String> getSignedUrl(@RequestParam String url) {
+        if (isBlank(url)) return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(fileStorageService.generatePresignedUrl(url, 1800));
+    }
+
+    @GetMapping("/media/html")
+    public ResponseEntity<String> getHtmlContent(@RequestParam String url) {
+        if (isBlank(url)) return ResponseEntity.badRequest().build();
+        String signed = fileStorageService.generatePresignedUrl(url, 600);
+        if (isBlank(signed)) return ResponseEntity.badRequest().build();
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(signed).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+            conn.setInstanceFollowRedirects(true);
+            try (InputStream in = conn.getInputStream();
+                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = in.read(buf)) != -1) {
+                    out.write(buf, 0, len);
+                }
+                String html = out.toString(StandardCharsets.UTF_8);
+                return ResponseEntity.ok()
+                        .contentType(MediaType.TEXT_HTML)
+                        .body(html);
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
     }
@@ -138,4 +179,3 @@ public class AdminVehicleMediaController {
         return t.isEmpty() ? null : t;
     }
 }
-

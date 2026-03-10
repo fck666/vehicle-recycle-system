@@ -17,3 +17,10 @@ export async function deleteVehicleDocument(vehicleId: number, docId: number): P
   await requestJson<void>('DELETE', `/api/admin/vehicles/${vehicleId}/documents/${docId}`)
 }
 
+export async function getSignedUrl(url: string): Promise<string> {
+  return requestJson<string>('GET', `/api/admin/vehicles/media/sign?url=${encodeURIComponent(url)}`)
+}
+
+export async function getHtmlContent(url: string): Promise<string> {
+  return requestJson<string>('GET', `/api/admin/vehicles/media/html?url=${encodeURIComponent(url)}`)
+}

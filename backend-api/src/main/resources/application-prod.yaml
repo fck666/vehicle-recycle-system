@@ -29,21 +29,22 @@ spring:
         format_sql: false
         dialect: org.hibernate.dialect.MySQLDialect
 
-  # Redis Configuration (If using Redis for session/cache)
-  # data:
-  #   redis:
-  #     host: ${REDIS_HOST:localhost}
-  #     port: ${REDIS_PORT:6379}
-  #     password: ${REDIS_PASSWORD:}
-  #     database: 0
+  # Redis Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: 5s
 
 aliyun:
   oss:
-    endpoint: oss-cn-beijing.aliyuncs.com
+    endpoint: ${ALIYUN_OSS_ENDPOINT:https://oss-cn-beijing.aliyuncs.com}
     access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
     access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
     bucket-name: xhy-car-files
-    domain: https://xhy-car-files.oss-cn-beijing.aliyuncs.com
+    domain: ${ALIYUN_OSS_DOMAIN:https://xhy-car-files.oss-cn-beijing.aliyuncs.com}
 
 jwt:
   secret: ${JWT_SECRET}
