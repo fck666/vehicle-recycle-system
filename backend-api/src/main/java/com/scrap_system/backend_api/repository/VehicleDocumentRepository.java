@@ -10,4 +10,7 @@ import java.util.Optional;
 public interface VehicleDocumentRepository extends JpaRepository<VehicleDocument, Long> {
     Optional<VehicleDocument> findFirstByVehicle_IdAndSha256(Long vehicleId, String sha256);
     Optional<VehicleDocument> findFirstByVehicle_IdAndDocUrl(Long vehicleId, String docUrl);
+    
+    // For fast deduplication by source URL (MIIT detail page URL)
+    Optional<VehicleDocument> findFirstBySourceUrl(String sourceUrl);
 }

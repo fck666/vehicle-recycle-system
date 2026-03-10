@@ -151,35 +151,79 @@ def parse_detail_html(html: str, detail_url: str) -> tuple[dict[str, str], list[
     return field_map, imgs
 
 
-def to_vehicle_spec_item(field_map: dict[str, str], detail_url: str, raw_html: str, source_site: str = "MIIT_EIDC") -> dict[str, Any]:
-    product_no = field_map.get("产品号") or field_map.get("产品号 ")
-    product_id = field_map.get("产品ID") or field_map.get("产品ID ")
+def to_vehicle_spec_item(field_map: dict[str, str], detail_url: str, raw_html: str, source_site: str = "MIIT_EIDC", forced_pc: str | None = None) -> dict[str, Any]:
+    # Helper to get value from multiple possible keys
+    def get_any(keys: list[str]) -> str | None:
+        for k in keys:
+            v = field_map.get(k)
+            if v: return v
+            # Try key with space
+            v = field_map.get(k + " ")
+            if v: return v
+        return None
+
+    product_no = get_any(["产品号", "产品型号"])
+    product_id = get_any(["产品ID"])
     pc = field_map.get("批次")
-    release_date = _parse_yyyymmdd(field_map.get("发布日期"))
+    # Priority: forced_pc (from task) > pc (from page)
+    if forced_pc:
+        pc = forced_pc
+        
+    # Try to parse batchNo from pc string (e.g. "398")
+    batch_no = None
+    if pc and pc.isdigit():
+        batch_no = int(pc)
+        
+    release_date = _parse_yyyymmdd(get_any(["发布日期"]))
+    
+    # Parse modelYear from releaseDate if available
+    model_year = datetime.now().year
+    if release_date:
+        try:
+            # release_date is YYYY-MM-DD
+            dt = datetime.strptime(release_date, "%Y-%m-%d")
+            model_year = dt.year
+        except Exception:
+            pass
+            
+    brand = get_any(["产品商标", "商标", "中文品牌"])
+    model_code = get_any(["车辆型号", "型号"])
+    vehicle_type = get_any(["车辆名称", "名称"])
 
-    brand = field_map.get("产品商标")
-    model_code = field_map.get("车辆型号")
-    vehicle_type = field_map.get("车辆名称")
-    manufacturer = field_map.get("企业名称")
-    production_address = field_map.get("生产地址")
+    # Fix: Ensure required fields are not None and not empty strings
+    if not brand or not brand.strip():
+        brand = "未知"
+    if not model_code or not model_code.strip():
+        model_code = "未知"
+    if not vehicle_type or not vehicle_type.strip():
+        vehicle_type = "未知"
+    
+    manufacturer = get_any(["企业名称", "生产企业"])
+    production_address = get_any(["生产地址", "地址"])
 
-    curb_weight = _parse_num_max(field_map.get("整备质量"))
-    gross_weight = _parse_num_max(field_map.get("总质量"))
-    length_mm = _parse_int(field_map.get("外形尺寸长"))
-    width_mm = _parse_int(field_map.get("外形尺寸宽"))
-    height_mm = _parse_int_max(field_map.get("外形尺寸高"))
-    wheelbase_mm = _parse_int(field_map.get("轴距"))
-    max_speed = _parse_int(field_map.get("最高车速"))
-    axle_count = _parse_int(field_map.get("轴数"))
-    front_track = _parse_int(field_map.get("前轮距"))
-    rear_track = _parse_int(field_map.get("后轮距"))
-    tire_count = _parse_int(field_map.get("轮胎数"))
-    tire_spec = field_map.get("轮胎规格")
-    steering_type = field_map.get("转向形式")
-    vin_pattern = field_map.get("车辆识别代号(VIN)")
-    fuel_type = field_map.get("燃料种类")
-    displacement = _parse_int(field_map.get("排量"))
-    power_kw = _parse_num_max(field_map.get("发动机功率"))
+    curb_weight = _parse_num_max(get_any(["整备质量"]))
+    # Fix: Ensure numeric fields are safe
+    if curb_weight is None:
+        curb_weight = 0.0
+    
+    gross_weight = _parse_num_max(get_any(["总质量"]))
+    length_mm = _parse_int(get_any(["外形尺寸长", "长"]))
+    width_mm = _parse_int(get_any(["外形尺寸宽", "宽"]))
+    height_mm = _parse_int_max(get_any(["外形尺寸高", "高"]))
+    wheelbase_mm = _parse_int(get_any(["轴距"]))
+    max_speed = _parse_int(get_any(["最高车速", "车速"]))
+    axle_count = _parse_int(get_any(["轴数"]))
+    front_track = _parse_int(get_any(["前轮距"]))
+    rear_track = _parse_int(get_any(["后轮距"]))
+    tire_count = _parse_int(get_any(["轮胎数"]))
+    tire_spec = get_any(["轮胎规格"])
+    steering_type = get_any(["转向形式", "转向方式"])
+    vin_pattern = get_any(["识别代码", "VIN"])
+    fuel_type = get_any(["燃料种类", "燃料类型"])
+    if not fuel_type or not fuel_type.strip(): fuel_type = "未知"
+    
+    displacement = _parse_displacement_ml(get_any(["排量"]))
+    power_kw = _parse_power_kw(get_any(["发动机功率"]))
     motor_model = field_map.get("发动机型号")
     motor_manufacturer = field_map.get("发动机生产企业")
     has_abs = _parse_bool_zh(field_map.get("防抱死系统"))
@@ -201,7 +245,30 @@ def to_vehicle_spec_item(field_map: dict[str, str], detail_url: str, raw_html: s
             front_overhang = _parse_int(parts[0])
             rear_overhang = _parse_int(parts[1])
 
+    # 400 Error Fix:
+    # Legacy data (e.g. batch 178) might miss required fields.
+    # We must provide defaults or empty strings to pass backend validation.
+    
+    if not fuel_type:
+        fuel_type = "未知"
+        
+    if not vehicle_type:
+        vehicle_type = "未知"
+        
+    # Some legacy data has no productNo, use productId instead or a placeholder
+    if not product_no and product_id:
+        product_no = product_id
+    elif not product_no:
+        product_no = "UNKNOWN_" + str(batch_no or "0")
+        
+    # Backend might require brand/model
+    if not brand:
+        brand = "未知"
+    if not model_code:
+        model_code = "未知"
+
     raw = {
+        "parserVersion": "1.0",
         "sourceSite": source_site,
         "detailUrl": detail_url,
         "fetchedAt": datetime.now().isoformat(timespec="seconds"),
@@ -213,7 +280,7 @@ def to_vehicle_spec_item(field_map: dict[str, str], detail_url: str, raw_html: s
         "sourceSite": source_site,
         "productId": product_id,
         "productNo": product_no,
-        "batchNo": int(pc) if pc and pc.isdigit() else None,
+        "batchNo": batch_no,
         "releaseDate": release_date,
         "brand": brand,
         "model": model_code,
@@ -222,7 +289,7 @@ def to_vehicle_spec_item(field_map: dict[str, str], detail_url: str, raw_html: s
         "trademark": brand,
         "productionAddress": production_address,
         "productModel": model_code,
-        "curbWeight": curb_weight,
+        "curbWeight": curb_weight if curb_weight is not None else 0,
         "grossWeight": gross_weight,
         "lengthMm": length_mm,
         "widthMm": width_mm,
@@ -248,6 +315,7 @@ def to_vehicle_spec_item(field_map: dict[str, str], detail_url: str, raw_html: s
         "motorManufacturer": motor_manufacturer,
         "vinPattern": vin_pattern,
         "specRawJson": json.dumps(raw, ensure_ascii=False),
+        "modelYear": model_year,
     }
     item = {k: v for k, v in item.items() if v is not None and v != ""}
     return item
@@ -304,6 +372,43 @@ def _parse_num_max(s: str | None) -> float | None:
         return float(max(float(x) for x in nums))
     except Exception:
         return None
+
+
+def _parse_displacement_ml(s: str | None) -> int | None:
+    if not s:
+        return None
+    direct = _parse_int(s)
+    if direct is not None and 300 <= direct <= 10000:
+        return direct
+    digits = re.sub(r"[^0-9]", "", s)
+    if not digits:
+        return None
+    if 300 <= int(digits[:4]) <= 10000:
+        return int(digits[:4])
+    for size in (4, 3, 5):
+        chunks = [digits[i:i + size] for i in range(0, len(digits), size) if len(digits[i:i + size]) == size]
+        vals = [int(x) for x in chunks if 300 <= int(x) <= 10000]
+        if vals:
+            return max(vals)
+    return None
+
+
+def _parse_power_kw(s: str | None) -> float | None:
+    if not s:
+        return None
+    nums = [float(x) for x in re.findall(r"[-+]?[0-9]+(?:\.[0-9]+)?", s)]
+    valid = [x for x in nums if 1 <= x <= 2000]
+    if valid:
+        return max(valid)
+    digits = re.sub(r"[^0-9]", "", s)
+    if not digits:
+        return None
+    for size in (2, 3):
+        chunks = [digits[i:i + size] for i in range(0, len(digits), size) if len(digits[i:i + size]) == size]
+        vals = [float(x) for x in chunks if 1 <= int(x) <= 2000]
+        if vals:
+            return max(vals)
+    return None
 
 
 def _parse_int(s: str | None) -> int | None:

@@ -57,9 +57,7 @@ public class VehicleSpecController {
                     continue;
                 }
 
-                Optional<VehicleModel> existing = !isBlank(productId)
-                        ? vehicleModelRepository.findByProductId(productId)
-                        : vehicleModelRepository.findByProductNo(productNo);
+                Optional<VehicleModel> existing = resolveVehicle(productId, productNo);
 
                 boolean isInsert = existing.isEmpty();
                 VehicleModel model = existing.orElseGet(VehicleModel::new);
@@ -184,6 +182,19 @@ public class VehicleSpecController {
 
     private static String normalize(String s) {
         return s == null ? null : s.trim();
+    }
+
+    private Optional<VehicleModel> resolveVehicle(String productId, String productNo) {
+        if (!isBlank(productNo)) {
+            Optional<VehicleModel> byNo = vehicleModelRepository.findByProductNo(productNo);
+            if (byNo.isPresent()) {
+                return byNo;
+            }
+        }
+        if (!isBlank(productId)) {
+            return vehicleModelRepository.findByProductId(productId);
+        }
+        return Optional.empty();
     }
 
     private static boolean isBlank(String s) {

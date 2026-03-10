@@ -41,6 +41,21 @@ public class AdminVehicleMediaController {
         if (vehicle == null) {
             return ResponseEntity.notFound().build();
         }
+
+        // Deduplicate: check if image with same name already exists
+        if (name != null) {
+            boolean exists = vehicle.getImages().stream()
+                    .anyMatch(i -> name.equals(i.getImageName()));
+            if (exists) {
+                // If exists, just return the existing one or OK status
+                // But we need to return the object. Let's find it.
+                VehicleImage existing = vehicle.getImages().stream()
+                        .filter(i -> name.equals(i.getImageName()))
+                        .findFirst().orElse(null);
+                return ResponseEntity.ok(existing);
+            }
+        }
+
         String imageUrl = fileStorageService.uploadFile(file, "vehicles/" + vehicleId);
         VehicleImage image = new VehicleImage();
         image.setVehicle(vehicle);

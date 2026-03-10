@@ -21,12 +21,16 @@ const advParams = reactive<{
   vehicleTypes: string[]
   fuelTypes: string[]
   sourceTypes: string[]
+  batchNoMin?: number
+  batchNoMax?: number
 }>({
   brands: [],
   manufacturers: [],
   vehicleTypes: [],
   fuelTypes: [],
-  sourceTypes: []
+  sourceTypes: [],
+  batchNoMin: undefined,
+  batchNoMax: undefined
 })
 
 const brandOptions = ref<string[]>([])
@@ -135,6 +139,8 @@ function resetAdvSearch() {
    advParams.vehicleTypes = []
    advParams.fuelTypes = []
    advParams.sourceTypes = []
+   advParams.batchNoMin = undefined
+   advParams.batchNoMax = undefined
    onSearch()
  }
 
@@ -403,7 +409,16 @@ loadFacets()
                    </el-select>
                  </el-form-item>
                </el-col>
-               <el-col :span="18" style="display:flex;align-items:flex-end;justify-content:flex-end;">
+               <el-col :span="12">
+                 <el-form-item label="批次范围">
+                   <div style="display:flex;align-items:center;gap:8px;">
+                     <el-input-number v-model="advParams.batchNoMin" :min="0" placeholder="起始批次" style="width:140px;" />
+                     <span>-</span>
+                     <el-input-number v-model="advParams.batchNoMax" :min="0" placeholder="结束批次" style="width:140px;" />
+                   </div>
+                 </el-form-item>
+               </el-col>
+               <el-col :span="6" style="display:flex;align-items:flex-end;justify-content:flex-end;">
                  <el-button @click="resetAdvSearch">重置</el-button>
                  <el-button type="primary" @click="onSearch">确认筛选</el-button>
                </el-col>
@@ -424,7 +439,7 @@ loadFacets()
       </el-table-column>
       <el-table-column prop="brand" label="品牌" width="120" sortable="custom" />
       <el-table-column prop="model" label="车型" width="180" sortable="custom" />
-      <el-table-column prop="modelYear" label="年份" width="100" sortable="custom" />
+      <el-table-column prop="releaseDate" label="发布日期" width="120" sortable="custom" />
       <el-table-column prop="fuelType" label="燃料" width="120" sortable="custom" />
       <el-table-column prop="vehicleType" label="类型" width="140" sortable="custom" />
       <el-table-column prop="curbWeight" label="整备质量(kg)" width="140" sortable="custom" />

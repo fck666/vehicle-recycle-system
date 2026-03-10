@@ -13,6 +13,7 @@ export interface VehicleModel {
   brand: string
   model: string
   modelYear: number
+  releaseDate?: string
   fuelType: string
   vehicleType: string
   curbWeight: number

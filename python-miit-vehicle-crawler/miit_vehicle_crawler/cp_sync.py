@@ -306,6 +306,19 @@ def sync_cp(
 
         if limit > 0:
             items = items[: limit]
+        deduped: list[CpListItem] = []
+        seen: set[tuple[str, str]] = set()
+        duplicated = 0
+        for it in items:
+            key = (it.cpid, it.pc)
+            if key in seen:
+                duplicated += 1
+                continue
+            seen.add(key)
+            deduped.append(it)
+        if duplicated > 0:
+            log("miit.cp.list.dedup", before=len(items), after=len(deduped), duplicated=duplicated)
+        items = deduped
         if on_progress:
             on_progress({"stage": "LIST_DONE", "count": len(items)})
 
@@ -374,25 +387,28 @@ def sync_cp(
                     try:
                         # cpid is 'productId' (e.g. AB662101)
                         # clxh is 'productNo' (e.g. FV6506HADEG)
-                        existing_vehicle = _lookup_vehicle(session, backend, it.cpid, it.clxh)
+                        # Log the lookup attempt for debugging
+                        # log("miit.cp.lookup.start", cpid=it.cpid, clxh=it.clxh)
                         
-                        # Early skip optimization: if we have HTML and at least one image, skip page visit
+                        existing_vehicle = _lookup_vehicle(session, backend, it.cpid, it.clxh, it.detail_url)
+                        
                         if existing_vehicle:
                             existing_images = existing_vehicle.get("images") or []
                             existing_docs = existing_vehicle.get("documents") or []
                             has_html = any(d.get("docType") == "MIIT_HTML" for d in existing_docs)
                             
-                            # Fast skip: assume if we have HTML and some images, it's likely complete.
-                            # We can't know the exact expected image count without visiting the page,
-                            # but usually if we have > 0 images and the HTML doc, it was a successful crawl.
-                            if has_html and len(existing_images) > 0:
-                                log("miit.cp.exists.fast_skip", cpid=it.cpid, vid=existing_vehicle.get("id"), actual_images=len(existing_images))
+                            # More robust skip logic:
+                            # 1. If HTML exists and we have at least 1 image, we consider it "crawled"
+                            # 2. Or if we have 3+ images (some legacy data might miss HTML doc but have images)
+                            # 3. If we have > 0 images, let's just skip it for now to be aggressive
+                            if has_html or len(existing_images) > 0:
+                                log("miit.cp.exists.fast_skip", cpid=it.cpid, vid=existing_vehicle.get("id"), actual_images=len(existing_images), has_html=has_html, reason="html_or_images_exist")
                                 skipped += 1
                                 if on_progress:
                                     on_progress({"stage": "SKIP", "idx": idx, "total": len(items), "reason": "exists_fast_skip"})
                                 success = True
-                                break # Break retry loop
-                                
+                                break
+                            log("miit.cp.exists.lookup_hit", cpid=it.cpid, vid=existing_vehicle.get("id"), actual_images=len(existing_images), has_html=has_html)
                     except Exception as e:
                         log("miit.cp.lookup.error", err=str(e))
 
@@ -405,14 +421,13 @@ def sync_cp(
                     page.wait_for_selector("table.query_result_table", timeout=60_000)
                     html = page.content()
                     field_map, img_urls = parse_detail_html(html, it.detail_url)
-                    spec = to_vehicle_spec_item(field_map, it.detail_url, html)
+                    # Pass it.pc (from task) as forced_pc
+                    spec = to_vehicle_spec_item(field_map, it.detail_url, html, forced_pc=it.pc)
                     spec.setdefault("brand", it.cpsb)
                     spec.setdefault("model", it.clxh)
                     spec.setdefault("vehicleType", it.clmc)
                     
                     # Fill defaults for required fields if missing
-                    if spec.get("modelYear") is None:
-                        spec["modelYear"] = datetime.now().year
                     if spec.get("curbWeight") is None:
                         spec["curbWeight"] = 0 # use 0 instead of 1
                     if spec.get("fuelType") is None:
@@ -452,10 +467,9 @@ def sync_cp(
                         raise RuntimeError(f"vehicle id not found after upsert: cpid={it.cpid}")
                     img_map = {}
                     try:
-                        expected_image_count = len(img_urls)
-                        img_count, img_map = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
-                        if img_count != expected_image_count:
-                            raise RuntimeError(f"image incomplete for cpid={it.cpid}, expected={expected_image_count}, uploaded={img_count}")
+                        img_count, img_map, downloadable_expected = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
+                        if img_count != downloadable_expected:
+                            raise RuntimeError(f"image incomplete for cpid={it.cpid}, expected={downloadable_expected}, uploaded={img_count}")
                         images_uploaded += img_count
                         html_docs += _upload_html_doc(session, backend, vehicle_id, it, _rewrite_html(html, img_map))
                         inserted += inserted_delta
@@ -518,19 +532,55 @@ def _maybe_wait_for_captcha(page) -> None:
         input("检测到访问验证，自动识别失败，请在浏览器窗口中完成验证后回车继续...")
 
 
-def _lookup_vehicle(session: requests.Session, backend: str, product_id: str | None, product_no: str | None) -> dict[str, Any] | None:
+def _lookup_vehicle(session: requests.Session, backend: str, product_id: str | None, product_no: str | None, source_url: str | None = None) -> dict[str, Any] | None:
     base = backend.rstrip("/")
+    
+    # 1. Try lookup by productNo (most accurate)
+    if product_no:
+        url = f"{base}/api/admin/vehicles/lookup?productNo={quote(product_no)}"
+        try:
+            resp = session.get(url, timeout=20)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+
+    # 2. Try lookup by source URL (100% accurate deduplication)
+    # This avoids issues where productId matches but productNo is different
+    if source_url:
+        url = f"{base}/api/admin/vehicles/lookup?sourceUrl={quote(source_url)}"
+        try:
+            resp = session.get(url, timeout=20)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+
+    # 3. Fallback to productId (for legacy data or missing productNo in list)
     if product_id:
         url = f"{base}/api/admin/vehicles/lookup?productId={quote(product_id)}"
-    elif product_no:
-        url = f"{base}/api/admin/vehicles/lookup?productNo={quote(product_no)}"
-    else:
-        return None
-    resp = session.get(url, timeout=20)
-    if resp.status_code == 404:
-        return None
-    resp.raise_for_status()
-    return resp.json()
+        try:
+            resp = session.get(url, timeout=20)
+            if resp.status_code == 200:
+                v = resp.json()
+                # If we found a vehicle by ID, but we also have a productNo from the list,
+                # we should check if they match.
+                # HOWEVER, if the stored vehicle has a different productNo, it MIGHT be a conflict,
+                # OR it might be that the stored vehicle has a "better" productNo from detail page.
+                # But if we are in this block, it means lookup by productNo FAILED.
+                # So if we find a vehicle by ID, and it has a productNo, it means the productNo doesn't match what we have.
+                # This strongly suggests it's a DIFFERENT vehicle (collision on ID).
+                
+                found_no = v.get("productNo")
+                if product_no and found_no and product_no.strip() != found_no.strip():
+                    # Collision detected: found vehicle is NOT the one we are looking for.
+                    return None
+                
+                return v
+        except Exception:
+            pass
+
+    return None
 
 
 def _delete_vehicle(session: requests.Session, backend: str, vehicle_id: int) -> None:
@@ -580,14 +630,16 @@ def _upload_file(session: requests.Session, backend: str, file_path: str, path: 
         return data["url"]
 
 
-def _download_and_upload_images(session: requests.Session, backend: str, context, vehicle_id: int, it: CpListItem, img_urls: list[str]) -> tuple[int, dict[str, str]]:
+def _download_and_upload_images(session: requests.Session, backend: str, context, vehicle_id: int, it: CpListItem, img_urls: list[str]) -> tuple[int, dict[str, str], int]:
     if not img_urls:
-        return 0, {}
+        return 0, {}, 0
     uploaded = 0
     mapping: dict[str, str] = {}
+    downloadable_expected = 0
     base = backend.rstrip("/")
     for i, u in enumerate(img_urls):
         retry_download = 0
+        url_downloadable = False
         while retry_download < 3:
             try:
                 # Add headers to mimic browser request
@@ -596,6 +648,9 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                     "Referer": "https://service.miit-eidc.org.cn/"
                 }
                 resp = context.request.get(u, timeout=60_000, headers=headers)
+                if resp.status == 404:
+                    log("miit.cp.image.not_found", url=u, status=404)
+                    break
                 if not resp.ok:
                     log("miit.cp.image.download.failed", url=u, status=resp.status, attempt=retry_download + 1)
                     retry_download += 1
@@ -608,6 +663,10 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                      retry_download += 1
                      time.sleep(1)
                      continue
+
+                if not url_downloadable:
+                    downloadable_expected += 1
+                    url_downloadable = True
 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
                     f.write(body)
@@ -637,7 +696,7 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                 retry_download += 1
                 time.sleep(1)
                 continue
-    return uploaded, mapping
+    return uploaded, mapping, downloadable_expected
 
 
 def _rewrite_html(html: str, img_map: dict[str, str]) -> str:

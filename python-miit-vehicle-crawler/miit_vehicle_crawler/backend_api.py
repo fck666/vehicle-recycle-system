@@ -4,13 +4,24 @@ from typing import Any
 
 import requests
 
+from .logging_utils import log
+
 
 def post_json(session: requests.Session, url: str, payload: Any, run_id: str | None = None) -> dict[str, Any]:
     headers: dict[str, str] = {}
     if run_id:
         headers["X-Run-Id"] = run_id
-    resp = session.post(url, json=payload, timeout=30, headers=headers if headers else None)
-    resp.raise_for_status()
+
+    # Debug: log payload for 400 errors
+    try:
+        resp = session.post(url, json=payload, timeout=60, headers=headers if headers else None)
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 400:
+            # Log the payload that caused 400
+            import json
+            log("miit.cp.upsert.error.400", payload=json.dumps(payload, ensure_ascii=False)[:2000], response=e.response.text)
+        raise e
     return resp.json()
 
 

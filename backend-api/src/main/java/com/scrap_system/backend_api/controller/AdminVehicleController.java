@@ -23,22 +23,31 @@ import java.util.Optional;
 public class AdminVehicleController {
 
     private final VehicleModelRepository vehicleModelRepository;
+    private final com.scrap_system.backend_api.repository.VehicleDocumentRepository vehicleDocumentRepository;
     private final com.scrap_system.backend_api.service.FileStorageService fileStorageService;
 
     @GetMapping("/lookup")
     public ResponseEntity<VehicleModel> lookup(
             @RequestParam(required = false) String productId,
-            @RequestParam(required = false) String productNo
+            @RequestParam(required = false) String productNo,
+            @RequestParam(required = false) String sourceUrl
     ) {
+        if (!isBlank(productNo)) {
+            return vehicleModelRepository.findByProductNo(productNo.trim())
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        }
         if (!isBlank(productId)) {
             return vehicleModelRepository.findByProductId(productId.trim())
                     .map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
-        if (!isBlank(productNo)) {
-            return vehicleModelRepository.findByProductNo(productNo.trim())
-                    .map(ResponseEntity::ok)
-                    .orElseGet(() -> ResponseEntity.notFound().build());
+        if (!isBlank(sourceUrl)) {
+             // Lookup via vehicle document
+             return vehicleDocumentRepository.findFirstBySourceUrl(sourceUrl.trim())
+                     .map(com.scrap_system.backend_api.model.VehicleDocument::getVehicle)
+                     .map(ResponseEntity::ok)
+                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
         return ResponseEntity.badRequest().build();
     }
@@ -50,6 +59,8 @@ public class AdminVehicleController {
             @RequestParam(required = false) List<String> manufacturers,
             @RequestParam(required = false) List<String> vehicleTypes,
             @RequestParam(required = false) List<String> fuelTypes,
+            @RequestParam(required = false) Integer batchNoMin,
+            @RequestParam(required = false) Integer batchNoMax,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String sort
@@ -75,7 +86,7 @@ public class AdminVehicleController {
         PageRequest pageable = PageRequest.of(safePage, safeSize, sortObj);
 
         Specification<VehicleModel> spec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
-                q, brands, manufacturers, vehicleTypes, fuelTypes, null
+                q, brands, manufacturers, vehicleTypes, fuelTypes, null, batchNoMin, batchNoMax
         );
 
         return ResponseEntity.ok(vehicleModelRepository.findAll(spec, pageable));
@@ -147,6 +158,74 @@ public class AdminVehicleController {
         
         vehicleModelRepository.delete(v);
         return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/batch/{batchNo}")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<Map<String, Object>> deleteByBatch(
+            @PathVariable Integer batchNo,
+            @RequestParam(defaultValue = "false") boolean cleanFiles
+    ) {
+        if (batchNo == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<VehicleModel> vehicles = vehicleModelRepository.findByBatchNo(batchNo);
+        int count = vehicles.size();
+
+        if (cleanFiles) {
+            for (VehicleModel v : vehicles) {
+                if (v.getImages() != null) {
+                    for (com.scrap_system.backend_api.model.VehicleImage img : v.getImages()) {
+                        fileStorageService.deleteFile(img.getImageUrl());
+                    }
+                }
+                if (v.getDocuments() != null) {
+                    for (com.scrap_system.backend_api.model.VehicleDocument doc : v.getDocuments()) {
+                        fileStorageService.deleteFile(doc.getDocUrl());
+                    }
+                }
+            }
+        }
+
+        // Use deleteAllInBatch for efficiency if possible, but standard deleteAll handles cascading better in JPA if DB FKs are missing
+        // vehicleModelRepository.deleteAllInBatch(vehicles); 
+        // Safer to use deleteAll for now to ensure JPA handles child removal if not set in DB
+        vehicleModelRepository.deleteAll(vehicles);
+        
+        return ResponseEntity.ok(Map.of("deleted", count, "batchNo", batchNo, "cleanFiles", cleanFiles));
+    }
+
+    @DeleteMapping("/batch/range")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<Map<String, Object>> deleteByBatchRange(
+            @RequestParam Integer start,
+            @RequestParam Integer end,
+            @RequestParam(defaultValue = "false") boolean cleanFiles
+    ) {
+        if (start == null || end == null || start > end) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<VehicleModel> vehicles = vehicleModelRepository.findByBatchNoBetween(start, end);
+        int count = vehicles.size();
+
+        if (cleanFiles) {
+            for (VehicleModel v : vehicles) {
+                if (v.getImages() != null) {
+                    for (com.scrap_system.backend_api.model.VehicleImage img : v.getImages()) {
+                        fileStorageService.deleteFile(img.getImageUrl());
+                    }
+                }
+                if (v.getDocuments() != null) {
+                    for (com.scrap_system.backend_api.model.VehicleDocument doc : v.getDocuments()) {
+                        fileStorageService.deleteFile(doc.getDocUrl());
+                    }
+                }
+            }
+        }
+
+        vehicleModelRepository.deleteAll(vehicles);
+        
+        return ResponseEntity.ok(Map.of("deleted", count, "start", start, "end", end, "cleanFiles", cleanFiles));
     }
 
     private static void apply(VehicleModel v, VehicleUpsertRequest r, boolean isCreate) {

@@ -16,7 +16,9 @@ public class VehicleSpecs {
             List<String> manufacturers,
             List<String> vehicleTypes,
             List<String> fuelTypes,
-            List<String> productIds
+            List<String> productIds,
+            Integer batchNoMin,
+            Integer batchNoMax
     ) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -54,9 +56,17 @@ public class VehicleSpecs {
                 predicates.add(root.get("fuelType").in(fuelTypes));
             }
             
-            // 6. 产品型号多选 (OR) - 这里假设 productId 列表用于精确匹配多个ID
+            // 6. 产品型号多选 (OR)
             if (productIds != null && !productIds.isEmpty()) {
                 predicates.add(root.get("productId").in(productIds));
+            }
+
+            // 7. 批次范围筛选 (AND)
+            if (batchNoMin != null) {
+                predicates.add(cb.ge(root.get("batchNo"), batchNoMin));
+            }
+            if (batchNoMax != null) {
+                predicates.add(cb.le(root.get("batchNo"), batchNoMax));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

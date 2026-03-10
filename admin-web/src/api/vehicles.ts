@@ -8,6 +8,8 @@ export interface VehicleSearchParams {
   vehicleTypes?: string[]
   fuelTypes?: string[]
   sourceTypes?: string[]
+  batchNoMin?: number
+  batchNoMax?: number
   page?: number
   size?: number
   sort?: string
@@ -28,6 +30,8 @@ export async function searchVehicles(params: VehicleSearchParams): Promise<Page<
   if (params.vehicleTypes) params.vehicleTypes.forEach(t => query.append('vehicleTypes', t))
   if (params.fuelTypes) params.fuelTypes.forEach(f => query.append('fuelTypes', f))
   if (params.sourceTypes) params.sourceTypes.forEach(s => query.append('sourceTypes', s))
+  if (params.batchNoMin !== undefined) query.append('batchNoMin', params.batchNoMin.toString())
+  if (params.batchNoMax !== undefined) query.append('batchNoMax', params.batchNoMax.toString())
   
   query.append('page', (params.page || 0).toString())
   query.append('size', (params.size || 20).toString())

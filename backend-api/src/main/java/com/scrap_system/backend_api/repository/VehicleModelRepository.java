@@ -17,6 +17,9 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
     Optional<VehicleModel> findByProductId(String productId);
     Optional<VehicleModel> findByProductNo(String productNo);
 
+    List<VehicleModel> findByBatchNo(Integer batchNo);
+    List<VehicleModel> findByBatchNoBetween(Integer start, Integer end);
+
     @Query("""
             select v from VehicleModel v
             where :q is null
