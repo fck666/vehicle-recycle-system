@@ -3,7 +3,9 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "车辆拆解回收"
+        "navigationBarTitleText": "车辆拆解回收",
+        "navigationBarBackgroundColor": "#07c160",
+        "navigationBarTextStyle": "white"
       }
     },
     {
@@ -17,6 +19,30 @@
       "style": {
         "navigationBarTitleText": "今日行情"
       }
+    },
+    {
+      "path": "pages/vehicle/list/list",
+      "style": {
+        "navigationBarTitleText": "车型查询"
+      }
+    },
+    {
+      "path": "pages/vehicle/detail/detail",
+      "style": {
+        "navigationBarTitleText": "车型详情"
+      }
+    },
+    {
+      "path": "pages/dismantle/entry",
+      "style": {
+        "navigationBarTitleText": "录入拆解数据"
+      }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "个人中心"
+      }
     }
   ],
   "globalStyle": {
@@ -27,7 +53,7 @@
   },
   "tabBar": {
     "color": "#7A7E83",
-    "selectedColor": "#3cc51f",
+    "selectedColor": "#07c160",
     "borderStyle": "black",
     "backgroundColor": "#ffffff",
     "list": [
@@ -36,8 +62,8 @@
         "text": "首页"
       },
       {
-        "pagePath": "pages/price/price",
-        "text": "行情"
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
       }
     ]
   }

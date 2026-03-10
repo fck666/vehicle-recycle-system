@@ -145,14 +145,24 @@ public class AuthService {
             throw new IllegalArgumentException("this staff account is already bound to another wechat");
         }
 
-        // 核心逻辑：将微信信息合并到后台账号上，并删除临时的微信账号
-        staffUser.setWxOpenid(wxUser.getWxOpenid());
-        staffUser.setWxUnionid(wxUser.getWxUnionid());
-        userAccountRepository.save(staffUser);
+        // 核心逻辑：将微信信息从临时账号转移到后台账号
+        String openid = wxUser.getWxOpenid();
+        String unionid = wxUser.getWxUnionid();
 
-        // 如果当前的微信账号和后台账号不是同一个，删除临时的微信账号
+        // 1. 先把临时账号的微信信息清空并保存（腾出唯一索引位置）
+        wxUser.setWxOpenid(null);
+        wxUser.setWxUnionid(null);
+        userAccountRepository.saveAndFlush(wxUser);
+
+        // 2. 将微信信息绑定到后台账号
+        staffUser.setWxOpenid(openid);
+        staffUser.setWxUnionid(unionid);
+        userAccountRepository.saveAndFlush(staffUser);
+
+        // 3. 删除临时的微信账号
         if (!staffUser.getId().equals(wxUser.getId())) {
-            // 注意：这里可能需要迁移微信账号关联的其它数据（如估值历史），暂时先简单处理
+            // 删除与临时微信账号关联的用户角色关系
+            userRoleRepository.findByUserId(wxUser.getId()).forEach(userRoleRepository::delete);
             userAccountRepository.delete(wxUser);
         }
     }
