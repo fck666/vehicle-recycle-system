@@ -1,7 +1,10 @@
 package com.scrap_system.backend_api.service;
 
+import cn.binarywang.wx.miniapp.api.WxMaService;
+import cn.binarywang.wx.miniapp.bean.WxMaJscode2SessionResult;
 import com.scrap_system.backend_api.dto.AuthLoginResponse;
 import com.scrap_system.backend_api.dto.AuthMeResponse;
+import com.scrap_system.backend_api.model.Role;
 import com.scrap_system.backend_api.model.UserAccount;
 import com.scrap_system.backend_api.model.UserRole;
 import com.scrap_system.backend_api.repository.RoleRepository;
@@ -9,12 +12,14 @@ import com.scrap_system.backend_api.repository.UserAccountRepository;
 import com.scrap_system.backend_api.repository.UserRoleRepository;
 import com.scrap_system.backend_api.security.JwtTokenService;
 import lombok.RequiredArgsConstructor;
+import me.chanjar.weixin.common.error.WxErrorException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +31,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final SessionService sessionService;
+    private final WxMaService wxMaService;
 
     @Value("${app.security.wx.dev-accept-openid:false}")
     private boolean devAcceptOpenid;
@@ -67,18 +73,32 @@ public class AuthService {
     public AuthLoginResponse wxLogin(String code, String openid, String unionid, String clientType) {
         String wxOpenid = normalize(openid);
         String wxUnionid = normalize(unionid);
+
+        // 如果 code 不为空，先尝试通过微信换取 openid
+        if (code != null && !code.trim().isEmpty()) {
+            try {
+                WxMaJscode2SessionResult session = wxMaService.getUserService().getSessionInfo(code);
+                wxOpenid = session.getOpenid();
+                wxUnionid = session.getUnionid();
+            } catch (WxErrorException e) {
+                throw new RuntimeException("WeChat login failed: " + e.getError().getErrorMsg());
+            }
+        }
+
         if (wxOpenid == null) {
             if (devAcceptOpenid) {
                 throw new IllegalArgumentException("openid required");
             }
-            throw new UnsupportedOperationException("wx code exchange not implemented");
+            throw new IllegalArgumentException("wx code exchange failed, openid is null");
         }
 
+        String finalWxOpenid = wxOpenid;
+        String finalWxUnionid = wxUnionid;
         UserAccount u = (wxUnionid != null ? userAccountRepository.findByWxUnionid(wxUnionid) : userAccountRepository.findByWxOpenid(wxOpenid))
                 .orElseGet(() -> {
                     UserAccount nu = new UserAccount();
-                    nu.setWxOpenid(wxOpenid);
-                    nu.setWxUnionid(wxUnionid);
+                    nu.setWxOpenid(finalWxOpenid);
+                    nu.setWxUnionid(finalWxUnionid);
                     nu.setStatus("ACTIVE");
                     return userAccountRepository.save(nu);
                 });
@@ -90,7 +110,7 @@ public class AuthService {
             throw new IllegalArgumentException("user disabled");
         }
 
-        Long userRoleId = roleRepository.findByCode("USER").map(r -> r.getId()).orElse(null);
+        Long userRoleId = roleRepository.findByCode("USER").map(Role::getId).orElse(null);
         if (userRoleId != null) {
             boolean has = userRoleRepository.findByUserId(u.getId()).stream().anyMatch(ur -> ur.getRoleId().equals(userRoleId));
             if (!has) {
@@ -105,6 +125,36 @@ public class AuthService {
         var s = sessionService.issue(u.getId(), normalizeClientType(clientType, "MINIAPP"));
         String token = jwtTokenService.issue(u.getId(), roles, s.getClientType(), s.getSessionId(), s.getTokenId());
         return new AuthLoginResponse(token, u.getId(), u.getUsername(), roles);
+    }
+
+    @Transactional
+    public void bindStaff(Long userId, String username, String password) {
+        UserAccount wxUser = userAccountRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("user not found"));
+        
+        // 查找要绑定的后台账号
+        UserAccount staffUser = userAccountRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalArgumentException("staff account not found"));
+
+        if (!passwordEncoder.matches(password, staffUser.getPasswordHash())) {
+            throw new IllegalArgumentException("invalid password");
+        }
+
+        // 检查该后台账号是否已经被绑定过
+        if (staffUser.getWxOpenid() != null && !staffUser.getWxOpenid().equals(wxUser.getWxOpenid())) {
+            throw new IllegalArgumentException("this staff account is already bound to another wechat");
+        }
+
+        // 核心逻辑：将微信信息合并到后台账号上，并删除临时的微信账号
+        staffUser.setWxOpenid(wxUser.getWxOpenid());
+        staffUser.setWxUnionid(wxUser.getWxUnionid());
+        userAccountRepository.save(staffUser);
+
+        // 如果当前的微信账号和后台账号不是同一个，删除临时的微信账号
+        if (!staffUser.getId().equals(wxUser.getId())) {
+            // 注意：这里可能需要迁移微信账号关联的其它数据（如估值历史），暂时先简单处理
+            userAccountRepository.delete(wxUser);
+        }
     }
 
     @Transactional

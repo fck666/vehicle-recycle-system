@@ -1,5 +1,6 @@
 package com.scrap_system.backend_api.controller;
 
+import com.scrap_system.backend_api.dto.AuthBindRequest;
 import com.scrap_system.backend_api.dto.AuthLoginRequest;
 import com.scrap_system.backend_api.dto.AuthLoginResponse;
 import com.scrap_system.backend_api.dto.AuthMeResponse;
@@ -68,10 +69,24 @@ public class AuthController {
         }
         try {
             return ResponseEntity.ok(authService.wxLogin(request.getCode(), request.getOpenid(), request.getUnionid(), request.getClientType()));
-        } catch (UnsupportedOperationException e) {
-            return ResponseEntity.status(501).build();
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(400).build();
+            return ResponseEntity.status(400).body(null);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    @PostMapping("/wx/bind")
+    public ResponseEntity<Void> wxBind(@RequestBody AuthBindRequest request, Authentication authentication) {
+        if (request == null || authentication == null || authentication.getPrincipal() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        Long userId = (Long) authentication.getPrincipal();
+        try {
+            authService.bindStaff(userId, request.getUsername(), request.getPassword());
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
         }
     }
 

@@ -21,5 +21,12 @@ server:
 app:
   material-price-fetch:
     enabled: true
-    cron: "0 10 2 * * *"
+    cron: "0 30 9,15 * * MON-FRI"
     zone: "Asia/Shanghai"
+
+# 微信小程序配置
+wx:
+  miniapp:
+    appid: ${WX_MINIAPP_APPID:wx8888888888888888} # 替换为你的小程序AppID
+    secret: ${WX_MINIAPP_SECRET:your_secret_here} # 替换为你的小程序Secret
+    msgDataFormat: JSON
