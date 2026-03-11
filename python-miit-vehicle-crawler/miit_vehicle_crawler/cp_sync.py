@@ -673,6 +673,12 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
     downloadable_expected = 0
     base = backend.rstrip("/")
     for i, u in enumerate(img_urls):
+        clean_u = _clean_url(u)
+        if clean_u != u:
+            log("miit.cp.image.url.cleaned", original=u, cleaned=clean_u)
+        if not clean_u or not clean_u.startswith(("http://", "https://")):
+            log("miit.cp.image.url.invalid", url=u)
+            continue
         retry_download = 0
         url_downloadable = False
         while retry_download < 3:
@@ -682,19 +688,19 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Referer": "https://service.miit-eidc.org.cn/"
                 }
-                resp = context.request.get(u, timeout=60_000, headers=headers)
+                resp = context.request.get(clean_u, timeout=60_000, headers=headers)
                 if resp.status == 404:
-                    log("miit.cp.image.not_found", url=u, status=404)
+                    log("miit.cp.image.not_found", url=clean_u, status=404)
                     break
                 if not resp.ok:
-                    log("miit.cp.image.download.failed", url=u, status=resp.status, attempt=retry_download + 1)
+                    log("miit.cp.image.download.failed", url=clean_u, status=resp.status, attempt=retry_download + 1)
                     retry_download += 1
                     time.sleep(1)
                     continue
                     
                 body = resp.body()
                 if not body or len(body) < 100: # Basic size check
-                     log("miit.cp.image.download.empty", url=u, size=len(body) if body else 0, attempt=retry_download + 1)
+                     log("miit.cp.image.download.empty", url=clean_u, size=len(body) if body else 0, attempt=retry_download + 1)
                      retry_download += 1
                      time.sleep(1)
                      continue
@@ -719,6 +725,7 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                         data = r.json()
                         if isinstance(data, dict) and data.get("imageUrl"):
                             mapping[u] = data["imageUrl"]
+                            mapping[clean_u] = data["imageUrl"]
                             uploaded += 1
                             break # Success, break retry loop
                 finally:
@@ -727,11 +734,18 @@ def _download_and_upload_images(session: requests.Session, backend: str, context
                     except Exception:
                         pass
             except Exception as e:
-                log("miit.cp.image.download.error", url=u, err=str(e), attempt=retry_download + 1)
+                log("miit.cp.image.download.error", url=clean_u, err=str(e), attempt=retry_download + 1)
                 retry_download += 1
                 time.sleep(1)
                 continue
     return uploaded, mapping, downloadable_expected
+
+
+def _clean_url(url: str | None) -> str:
+    if not url:
+        return ""
+    cleaned = url.replace("`", "").replace("\r", "").replace("\n", "").strip()
+    return cleaned
 
 
 def _rewrite_html(html: str, img_map: dict[str, str]) -> str:

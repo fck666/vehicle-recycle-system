@@ -5,6 +5,17 @@
       <input class="search-input" v-model="queryParams.q" placeholder="搜索品牌、型号、产品号..." confirm-type="search" @confirm="handleSearch" />
       <view class="search-btn" @click="handleSearch">搜索</view>
     </view>
+    <view class="history-box" v-if="searchHistory.length">
+      <view class="history-header">
+        <text class="history-title">搜索历史</text>
+        <text class="history-clear" @click="clearSearchHistory">清空</text>
+      </view>
+      <view class="history-list">
+        <view class="history-item" v-for="item in searchHistory" :key="item" @click="applySearchHistory(item)">
+          {{ item }}
+        </view>
+      </view>
+    </view>
 
     <!-- 筛选标签 -->
     <scroll-view scroll-x class="filter-scroll" v-if="facets.brands.length > 0">
@@ -54,6 +65,8 @@ const vehicleList = ref([]);
 const loading = ref(false);
 const finished = ref(false);
 const facets = reactive({ brands: [] });
+const searchHistory = ref([]);
+const searchHistoryLimit = 10;
 
 const queryParams = reactive({
   page: 0,
@@ -62,7 +75,48 @@ const queryParams = reactive({
   brand: ''
 });
 
+const getSearchHistoryKey = () => {
+  const userId = uni.getStorageSync('userId') || 'anonymous';
+  return `mp_vehicle_search_history_${userId}`;
+};
+
+const loadSearchHistory = () => {
+  const key = getSearchHistoryKey();
+  const list = uni.getStorageSync(key);
+  if (!Array.isArray(list)) {
+    searchHistory.value = [];
+    return;
+  }
+  searchHistory.value = list
+    .filter(v => typeof v === 'string')
+    .map(v => v.trim())
+    .filter(Boolean)
+    .slice(0, searchHistoryLimit);
+};
+
+const saveSearchHistory = () => {
+  uni.setStorageSync(getSearchHistoryKey(), searchHistory.value);
+};
+
+const recordSearchHistory = () => {
+  const keyword = (queryParams.q || '').trim();
+  if (!keyword) return;
+  searchHistory.value = [keyword, ...searchHistory.value.filter(item => item !== keyword)].slice(0, searchHistoryLimit);
+  saveSearchHistory();
+};
+
+const applySearchHistory = (keyword) => {
+  queryParams.q = keyword;
+  loadData(true);
+};
+
+const clearSearchHistory = () => {
+  searchHistory.value = [];
+  uni.removeStorageSync(getSearchHistoryKey());
+};
+
 onMounted(() => {
+  loadSearchHistory();
   fetchFacets();
   loadData(true);
 });
@@ -123,6 +177,7 @@ const loadData = (reset = false) => {
 };
 
 const handleSearch = () => {
+  recordSearchHistory();
   loadData(true);
 };
 
@@ -141,6 +196,12 @@ const goToDetail = (id) => {
 .search-box { display: flex; align-items: center; padding: 10px 15px; background-color: #fff; position: sticky; top: 0; z-index: 100; }
 .search-input { flex: 1; height: 36px; background-color: #f2f2f2; border-radius: 18px; padding: 0 15px; font-size: 14px; }
 .search-btn { margin-left: 10px; color: #07c160; font-size: 16px; font-weight: 500; }
+.history-box { background-color: #fff; padding: 8px 15px 12px; border-bottom: 1px solid #eee; }
+.history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.history-title { font-size: 13px; color: #999; }
+.history-clear { font-size: 13px; color: #07c160; }
+.history-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-item { background-color: #f2f2f2; border-radius: 14px; padding: 4px 12px; font-size: 12px; color: #666; }
 
 .filter-scroll { white-space: nowrap; background-color: #fff; padding: 10px 15px; border-bottom: 1px solid #eee; }
 .filter-item { display: inline-block; padding: 5px 15px; background-color: #f2f2f2; border-radius: 15px; margin-right: 10px; font-size: 13px; color: #666; }
