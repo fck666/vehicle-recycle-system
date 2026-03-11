@@ -49,6 +49,22 @@ const currentId = ref<number | null>(null)
 
 const auth = useAuthStore()
 const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERATOR'].includes(r)))
+type VehicleSearchHistoryItem = {
+  id: string
+  q: string
+  advParams: {
+    brands: string[]
+    manufacturers: string[]
+    vehicleTypes: string[]
+    fuelTypes: string[]
+    sourceTypes: string[]
+    batchNoMin?: number
+    batchNoMax?: number
+  }
+}
+const vehicleSearchHistory = ref<VehicleSearchHistoryItem[]>([])
+const vehicleSearchHistoryPrefix = 'admin_vehicle_search_history'
+const vehicleSearchHistoryLimit = 10
 
 const mediaVisible = ref(false)
 const mediaLoading = ref(false)
@@ -100,6 +116,94 @@ async function loadFacets() {
 const sortProp = ref('id')
 const sortOrder = ref('descending')
 
+function getVehicleSearchHistoryKey() {
+  return `${vehicleSearchHistoryPrefix}_${auth.me?.userId ?? 'anonymous'}`
+}
+
+function createHistoryId() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function captureAdvParams() {
+  return {
+    brands: [...advParams.brands],
+    manufacturers: [...advParams.manufacturers],
+    vehicleTypes: [...advParams.vehicleTypes],
+    fuelTypes: [...advParams.fuelTypes],
+    sourceTypes: [...advParams.sourceTypes],
+    batchNoMin: advParams.batchNoMin,
+    batchNoMax: advParams.batchNoMax,
+  }
+}
+
+function normalizeHistoryItem(item: any): VehicleSearchHistoryItem | null {
+  if (typeof item === 'string') {
+    return {
+      id: createHistoryId(),
+      q: item.trim(),
+      advParams: {
+        brands: [],
+        manufacturers: [],
+        vehicleTypes: [],
+        fuelTypes: [],
+        sourceTypes: [],
+        batchNoMin: undefined,
+        batchNoMax: undefined,
+      },
+    }
+  }
+  if (!item || typeof item !== 'object') return null
+  return {
+    id: typeof item.id === 'string' && item.id ? item.id : createHistoryId(),
+    q: typeof item.q === 'string' ? item.q.trim() : '',
+    advParams: {
+      brands: Array.isArray(item.advParams?.brands) ? item.advParams.brands.filter((v: any) => typeof v === 'string') : [],
+      manufacturers: Array.isArray(item.advParams?.manufacturers) ? item.advParams.manufacturers.filter((v: any) => typeof v === 'string') : [],
+      vehicleTypes: Array.isArray(item.advParams?.vehicleTypes) ? item.advParams.vehicleTypes.filter((v: any) => typeof v === 'string') : [],
+      fuelTypes: Array.isArray(item.advParams?.fuelTypes) ? item.advParams.fuelTypes.filter((v: any) => typeof v === 'string') : [],
+      sourceTypes: Array.isArray(item.advParams?.sourceTypes) ? item.advParams.sourceTypes.filter((v: any) => typeof v === 'string') : [],
+      batchNoMin: typeof item.advParams?.batchNoMin === 'number' ? item.advParams.batchNoMin : undefined,
+      batchNoMax: typeof item.advParams?.batchNoMax === 'number' ? item.advParams.batchNoMax : undefined,
+    },
+  }
+}
+
+function loadSearchHistory() {
+  const raw = localStorage.getItem(getVehicleSearchHistoryKey())
+  if (!raw) {
+    vehicleSearchHistory.value = []
+    return
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      vehicleSearchHistory.value = []
+      return
+    }
+    vehicleSearchHistory.value = parsed
+      .map(v => normalizeHistoryItem(v))
+      .filter((v): v is VehicleSearchHistoryItem => !!v)
+      .slice(0, vehicleSearchHistoryLimit)
+  } catch {
+    vehicleSearchHistory.value = []
+  }
+}
+
+function saveSearchHistory(history: VehicleSearchHistoryItem[]) {
+  localStorage.setItem(getVehicleSearchHistoryKey(), JSON.stringify(history))
+}
+
+function recordSearchHistory() {
+  const nextItem: VehicleSearchHistoryItem = {
+    id: createHistoryId(),
+    q: q.value.trim(),
+    advParams: captureAdvParams(),
+  }
+  const next = [nextItem, ...vehicleSearchHistory.value].slice(0, vehicleSearchHistoryLimit)
+  vehicleSearchHistory.value = next
+  saveSearchHistory(next)
+}
+
 async function load() {
   loading.value = true
   try {
@@ -118,15 +222,47 @@ async function load() {
   }
 }
 
-function onSearch() {
+function onSearch(recordHistory = true) {
+  if (recordHistory) recordSearchHistory()
   page.value = 0
   load()
+}
+
+function applySearchHistory(item: VehicleSearchHistoryItem) {
+  q.value = item.q
+  advParams.brands = [...item.advParams.brands]
+  advParams.manufacturers = [...item.advParams.manufacturers]
+  advParams.vehicleTypes = [...item.advParams.vehicleTypes]
+  advParams.fuelTypes = [...item.advParams.fuelTypes]
+  advParams.sourceTypes = [...item.advParams.sourceTypes]
+  advParams.batchNoMin = item.advParams.batchNoMin
+  advParams.batchNoMax = item.advParams.batchNoMax
+  onSearch(false)
+}
+
+function clearSearchHistory() {
+  vehicleSearchHistory.value = []
+  localStorage.removeItem(getVehicleSearchHistoryKey())
+}
+
+function getSearchHistoryLabel(item: VehicleSearchHistoryItem) {
+  const parts: string[] = []
+  if (item.q) parts.push(`关键词:${item.q}`)
+  if (item.advParams.brands.length) parts.push(`品牌:${item.advParams.brands.join('/')}`)
+  if (item.advParams.manufacturers.length) parts.push(`企业:${item.advParams.manufacturers.join('/')}`)
+  if (item.advParams.vehicleTypes.length) parts.push(`类型:${item.advParams.vehicleTypes.join('/')}`)
+  if (item.advParams.fuelTypes.length) parts.push(`燃料:${item.advParams.fuelTypes.join('/')}`)
+  if (item.advParams.sourceTypes.length) parts.push(`来源:${item.advParams.sourceTypes.join('/')}`)
+  if (item.advParams.batchNoMin != null || item.advParams.batchNoMax != null) {
+    parts.push(`批次:${item.advParams.batchNoMin ?? ''}-${item.advParams.batchNoMax ?? ''}`)
+  }
+  return parts.length ? parts.join(' | ') : '全部条件'
 }
 
 function onSortChange({ prop, order }: { prop: string, order: string }) {
   sortProp.value = prop
   sortOrder.value = order
-  onSearch()
+  onSearch(false)
 }
 
 function toggleAdvSearch() {
@@ -141,7 +277,7 @@ function resetAdvSearch() {
    advParams.sourceTypes = []
    advParams.batchNoMin = undefined
    advParams.batchNoMax = undefined
-   onSearch()
+   onSearch(false)
  }
 
 function openCreate() {
@@ -271,6 +407,14 @@ watch(previewDocVisible, (v) => {
     previewDocUrl.value = ''
   }
 })
+
+watch(
+  () => auth.me?.userId,
+  () => {
+    loadSearchHistory()
+  },
+  { immediate: true }
+)
 
 function isHtmlUrl(url: string): boolean {
   const clean = (url.split('?')[0] ?? '').toLowerCase()
@@ -421,6 +565,19 @@ loadFacets()
             </el-button>
           </div>
           <el-button v-if="canEdit" type="primary" @click="openCreate">新增车型</el-button>
+        </div>
+        <div v-if="vehicleSearchHistory.length" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:12px;color:var(--el-text-color-secondary);">搜索历史</span>
+          <el-tag
+            v-for="item in vehicleSearchHistory"
+            :key="item.id"
+            style="cursor:pointer;"
+            effect="plain"
+            @click="applySearchHistory(item)"
+          >
+            {{ getSearchHistoryLabel(item) }}
+          </el-tag>
+          <el-button link type="primary" @click="clearSearchHistory">清空</el-button>
         </div>
 
         <div v-show="isAdvSearchExpanded" style="background-color:var(--el-fill-color-light);padding:16px;border-radius:4px;">

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { JobRun } from '../api/jobRuns'
 import { createMiitCpJob, listMiitCpJobs, retryMiitCpJob } from '../api/miitCpJobs'
 import type { Page } from '../api/types'
+import { useAuthStore } from '../stores/auth'
 
 const loading = ref(false)
 const page = ref(0)
@@ -12,6 +13,8 @@ const result = ref<Page<JobRun>>({ content: [], totalElements: 0, totalPages: 0,
 const detailDialogVisible = ref(false)
 const currentJob = ref<JobRun | null>(null)
 const failedItems = ref<any[]>([])
+const auth = useAuthStore()
+const miitFormStoragePrefix = 'admin_miit_cp_form'
 
 const form = reactive({
   pcFrom: 398,
@@ -28,6 +31,45 @@ const form = reactive({
 const workerCmd = computed(() => {
   return `python -m miit_vehicle_crawler.cli worker --backend http://localhost:8090 --token <ADMIN_TOKEN>`
 })
+
+function getMiitFormStorageKey() {
+  return `${miitFormStoragePrefix}_${auth.me?.userId ?? 'anonymous'}`
+}
+
+function restoreForm() {
+  const raw = localStorage.getItem(getMiitFormStorageKey())
+  if (!raw) return
+  try {
+    const saved = JSON.parse(raw) as Partial<typeof form>
+    if (typeof saved.pcFrom === 'number') form.pcFrom = saved.pcFrom
+    if (typeof saved.pcTo === 'number') form.pcTo = saved.pcTo
+    if (typeof saved.cpsb === 'string') form.cpsb = saved.cpsb
+    if (typeof saved.clxh === 'string') form.clxh = saved.clxh
+    if (typeof saved.clmc === 'string') form.clmc = saved.clmc
+    if (typeof saved.pageSize === 'number') form.pageSize = saved.pageSize
+    if (typeof saved.limit === 'number') form.limit = saved.limit
+    if (typeof saved.headful === 'boolean') form.headful = saved.headful
+    if (typeof saved.qymcListText === 'string') form.qymcListText = saved.qymcListText
+  } catch {
+  }
+}
+
+function persistForm() {
+  localStorage.setItem(
+    getMiitFormStorageKey(),
+    JSON.stringify({
+      pcFrom: form.pcFrom,
+      pcTo: form.pcTo,
+      cpsb: form.cpsb,
+      clxh: form.clxh,
+      clmc: form.clmc,
+      pageSize: form.pageSize,
+      limit: form.limit,
+      headful: form.headful,
+      qymcListText: form.qymcListText,
+    })
+  )
+}
 
 function parseQymcList() {
   if (!form.qymcListText) return []
@@ -55,6 +97,7 @@ async function createJob() {
     ElMessage.warning('至少提供一个查询条件（长度不少于2）')
     return
   }
+  persistForm()
   try {
     await createMiitCpJob({
       pcFrom: form.pcFrom,
@@ -131,6 +174,14 @@ function formatStatus(s: string) {
   if (s === 'FAILED') return '失败'
   return s
 }
+
+watch(
+  () => auth.me?.userId,
+  () => {
+    restoreForm()
+  },
+  { immediate: true }
+)
 
 load()
 </script>

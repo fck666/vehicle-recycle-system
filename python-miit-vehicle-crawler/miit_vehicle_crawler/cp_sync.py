@@ -475,24 +475,27 @@ def sync_cp(
                     
                     img_map = {}
                     try:
+                        expected_images = len(img_urls)
                         img_count, img_map, downloadable_expected = _download_and_upload_images(session, backend, context, vehicle_id, it, img_urls)
-                        # We don't enforce image completeness strictly anymore, as some images are just broken on source
-                        # if img_count != downloadable_expected:
-                        #    raise RuntimeError(f"image incomplete for cpid={it.cpid}, expected={downloadable_expected}, uploaded={img_count}")
-                        
+                        if img_count != expected_images:
+                            raise RuntimeError(
+                                f"image incomplete for cpid={it.cpid}, expected={expected_images}, uploaded={img_count}, downloadable={downloadable_expected}"
+                            )
                         images_uploaded += img_count
-                        
-                        # Upload HTML doc
-                        # IMPORTANT: We must upload HTML even if images failed or are empty
+
                         rewritten_html = _rewrite_html(html, img_map)
-                        html_docs += _upload_html_doc(session, backend, vehicle_id, it, rewritten_html)
-                        
+                        html_docs += _upload_html_doc(
+                            session,
+                            backend,
+                            vehicle_id,
+                            it,
+                            rewritten_html,
+                            product_no=(vehicle.get("productNo") if isinstance(vehicle, dict) else None) or spec.get("productNo"),
+                        )
+
                         inserted += inserted_delta
                         updated += updated_delta
                     except Exception as e:
-                        # Only rollback if it's a critical error. 
-                        # If image download fails, we might still want to keep the vehicle spec?
-                        # User said "Absolutely no mistakes", so maybe rollback is safer.
                         _delete_vehicle(session, backend, vehicle_id)
                         raise RuntimeError(f"vehicle rolled back for cpid={it.cpid}: {str(e)}")
                     
@@ -609,7 +612,14 @@ def _delete_vehicle(session: requests.Session, backend: str, vehicle_id: int) ->
     resp.raise_for_status()
 
 
-def _upload_html_doc(session: requests.Session, backend: str, vehicle_id: int | None, it: CpListItem, html: str) -> int:
+def _upload_html_doc(
+    session: requests.Session,
+    backend: str,
+    vehicle_id: int | None,
+    it: CpListItem,
+    html: str,
+    product_no: str | None = None,
+) -> int:
     sha = hashlib.sha256(html.encode("utf-8")).hexdigest()
     name = f"miit_{it.pc}_{it.cpid}.html"
     with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as f:
@@ -620,7 +630,7 @@ def _upload_html_doc(session: requests.Session, backend: str, vehicle_id: int | 
         url = _upload_file(session, backend, tmp_path, path)
         doc = {
             "productId": it.cpid,
-            "productNo": it.clxh,
+            "productNo": product_no or it.clxh,
             "docType": "MIIT_HTML",
             "docName": name,
             "docUrl": url,
@@ -628,8 +638,15 @@ def _upload_html_doc(session: requests.Session, backend: str, vehicle_id: int | 
             "sourceUrl": it.detail_url,
             "fetchedAt": datetime.now().isoformat(timespec="seconds"),
         }
-        upsert_vehicle_documents(session, backend, [doc], run_id=None)
-        return 1
+        result = upsert_vehicle_documents(session, backend, [doc], run_id=None)
+        done = int(result.get("inserted", 0)) + int(result.get("updated", 0))
+        skipped = int(result.get("skipped", 0))
+        log("miit.cp.html.upsert.result", cpid=it.cpid, product_no=doc.get("productNo"), inserted=result.get("inserted", 0), updated=result.get("updated", 0), skipped=skipped)
+        if done <= 0 or skipped > 0:
+            raise RuntimeError(
+                f"html upsert not applied for cpid={it.cpid}, productNo={doc.get('productNo')}, result={result}"
+            )
+        return done
     finally:
         try:
             os.unlink(tmp_path)
