@@ -43,4 +43,14 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
 
     @Query("select distinct v.fuelType from VehicleModel v where v.fuelType is not null and length(trim(v.fuelType)) > 0 order by v.fuelType asc")
     List<String> findDistinctFuelTypes();
+    
+    @Query(value = """
+        SELECT v.id 
+        FROM vehicle_model v 
+        JOIN vehicle_document d ON v.id = d.vehicle_id 
+        WHERE d.doc_type = 'MIIT_HTML' 
+        GROUP BY v.id 
+        HAVING COUNT(DISTINCT d.source_url) > 1
+    """, nativeQuery = true)
+    List<Object[]> findIdsWithDuplicateSourceUrls();
 }

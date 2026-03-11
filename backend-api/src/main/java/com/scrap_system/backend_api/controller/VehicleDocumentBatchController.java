@@ -115,9 +115,12 @@ public class VehicleDocumentBatchController {
                 return byNo;
             }
         }
-        if (!isBlank(productId)) {
+        
+        // Strict Mode: Do NOT fallback to productId if productNo is present but not found.
+        if (isBlank(productNo) && !isBlank(productId)) {
             return vehicleModelRepository.findByProductId(productId);
         }
+        
         return Optional.empty();
     }
 

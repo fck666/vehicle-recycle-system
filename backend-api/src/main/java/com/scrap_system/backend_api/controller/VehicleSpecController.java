@@ -191,9 +191,17 @@ public class VehicleSpecController {
                 return byNo;
             }
         }
-        if (!isBlank(productId)) {
+        
+        // Strict Mode: Do NOT fallback to productId if productNo is present but not found.
+        // This prevents merging different vehicles that happen to share a productId (which is NOT unique).
+        // If productNo is missing (legacy data?), we might try productId, but even that is risky.
+        // Given the user's requirement "Absolutely no mistakes", we should disable productId fallback 
+        // when productNo is available.
+        
+        if (isBlank(productNo) && !isBlank(productId)) {
             return vehicleModelRepository.findByProductId(productId);
         }
+        
         return Optional.empty();
     }
 

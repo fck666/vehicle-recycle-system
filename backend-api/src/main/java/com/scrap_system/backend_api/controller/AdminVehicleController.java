@@ -228,6 +228,47 @@ public class AdminVehicleController {
         return ResponseEntity.ok(Map.of("deleted", count, "start", start, "end", end, "cleanFiles", cleanFiles));
     }
 
+
+
+    @DeleteMapping("/batch/cleanup-conflicts")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<Map<String, Object>> cleanupConflicts() {
+        // Find vehicle IDs that have duplicate source URLs in their documents
+        // This indicates merged vehicles (one vehicle record, multiple source pages)
+        List<Object[]> conflicts = vehicleModelRepository.findIdsWithDuplicateSourceUrls();
+        
+        int deletedVehicles = 0;
+        int deletedFiles = 0;
+        
+        for (Object[] row : conflicts) {
+            Long vehicleId = ((Number) row[0]).longValue();
+            Optional<VehicleModel> existing = vehicleModelRepository.findById(vehicleId);
+            
+            if (existing.isPresent()) {
+                VehicleModel v = existing.get();
+                
+                // Delete physical files
+                if (v.getImages() != null) {
+                    for (com.scrap_system.backend_api.model.VehicleImage img : v.getImages()) {
+                        fileStorageService.deleteFile(img.getImageUrl());
+                        deletedFiles++;
+                    }
+                }
+                if (v.getDocuments() != null) {
+                    for (com.scrap_system.backend_api.model.VehicleDocument doc : v.getDocuments()) {
+                        fileStorageService.deleteFile(doc.getDocUrl());
+                        deletedFiles++;
+                    }
+                }
+                
+                vehicleModelRepository.delete(v);
+                deletedVehicles++;
+            }
+        }
+        
+        return ResponseEntity.ok(Map.of("deletedVehicles", deletedVehicles, "deletedFiles", deletedFiles));
+    }
+
     private static void apply(VehicleModel v, VehicleUpsertRequest r, boolean isCreate) {
         if (r.getSourceType() != null) {
             v.setSourceType(r.getSourceType());
