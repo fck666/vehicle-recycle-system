@@ -136,6 +136,18 @@ function captureAdvParams() {
   }
 }
 
+function hasSearchCondition(item: VehicleSearchHistoryItem) {
+  if (item.q) return true
+  if (item.advParams.brands.length) return true
+  if (item.advParams.manufacturers.length) return true
+  if (item.advParams.vehicleTypes.length) return true
+  if (item.advParams.fuelTypes.length) return true
+  if (item.advParams.sourceTypes.length) return true
+  if (item.advParams.batchNoMin != null) return true
+  if (item.advParams.batchNoMax != null) return true
+  return false
+}
+
 function normalizeHistoryItem(item: any): VehicleSearchHistoryItem | null {
   if (typeof item === 'string') {
     return {
@@ -180,10 +192,14 @@ function loadSearchHistory() {
       vehicleSearchHistory.value = []
       return
     }
-    vehicleSearchHistory.value = parsed
+    const normalized = parsed
       .map(v => normalizeHistoryItem(v))
-      .filter((v): v is VehicleSearchHistoryItem => !!v)
+      .filter((v): v is VehicleSearchHistoryItem => !!v && hasSearchCondition(v))
       .slice(0, vehicleSearchHistoryLimit)
+    vehicleSearchHistory.value = normalized
+    if (normalized.length !== parsed.length) {
+      saveSearchHistory(normalized)
+    }
   } catch {
     vehicleSearchHistory.value = []
   }
@@ -199,6 +215,7 @@ function recordSearchHistory() {
     q: q.value.trim(),
     advParams: captureAdvParams(),
   }
+  if (!hasSearchCondition(nextItem)) return
   const next = [nextItem, ...vehicleSearchHistory.value].slice(0, vehicleSearchHistoryLimit)
   vehicleSearchHistory.value = next
   saveSearchHistory(next)
