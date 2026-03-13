@@ -209,9 +209,9 @@ const goToDetail = (id) => {
 
 .vehicle-list { padding: 15px; }
 .vehicle-item { background-color: #fff; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-.item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f9f9f9; }
-.brand-model { font-size: 16px; font-weight: bold; color: #333; }
-.batch-tag { font-size: 12px; color: #999; background-color: #f2f2f2; padding: 2px 6px; border-radius: 4px; }
+.item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f9f9f9; column-gap: 10px; }
+.brand-model { flex: 1; min-width: 0; font-size: 16px; font-weight: bold; color: #333; line-height: 1.35; word-break: break-word; }
+.batch-tag { flex-shrink: 0; min-width: 58px; text-align: center; white-space: nowrap; font-size: 12px; color: #999; background-color: #f2f2f2; padding: 2px 6px; border-radius: 4px; }
 .info-row { display: flex; margin-bottom: 5px; font-size: 14px; }
 .label { color: #999; width: 80px; }
 .value { color: #333; flex: 1; }

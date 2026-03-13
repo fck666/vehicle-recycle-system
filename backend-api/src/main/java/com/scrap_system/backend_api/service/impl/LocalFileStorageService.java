@@ -13,7 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
 @Service
-@Profile("!prod") // Active in dev, local, test, or default
+@Profile("!prod & !local-prod")
 public class LocalFileStorageService implements FileStorageService {
 
     private final Path rootLocation = Paths.get("uploads").toAbsolutePath().normalize();

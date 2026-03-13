@@ -21,6 +21,12 @@
       }
     },
     {
+      "path": "pages/price/history",
+      "style": {
+        "navigationBarTitleText": "历史行情"
+      }
+    },
+    {
       "path": "pages/vehicle/list/list",
       "style": {
         "navigationBarTitleText": "车型查询"
@@ -59,11 +65,15 @@
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "首页"
+        "text": "首页",
+        "iconPath": "static/tabbar/home.png",
+        "selectedIconPath": "static/tabbar/home-active.png"
       },
       {
         "pagePath": "pages/profile/profile",
-        "text": "我的"
+        "text": "我的",
+        "iconPath": "static/tabbar/profile.png",
+        "selectedIconPath": "static/tabbar/profile-active.png"
       }
     ]
   }

@@ -159,10 +159,13 @@ public class AuthService {
         staffUser.setWxUnionid(unionid);
         userAccountRepository.saveAndFlush(staffUser);
 
+        sessionService.revokeAll(staffUser.getId());
+        sessionService.revokeAll(wxUser.getId());
+
         // 3. 删除临时的微信账号
         if (!staffUser.getId().equals(wxUser.getId())) {
             // 删除与临时微信账号关联的用户角色关系
-            userRoleRepository.findByUserId(wxUser.getId()).forEach(userRoleRepository::delete);
+            userRoleRepository.deleteAllByUserId(wxUser.getId());
             userAccountRepository.delete(wxUser);
         }
     }

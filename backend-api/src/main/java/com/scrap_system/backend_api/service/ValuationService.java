@@ -15,6 +15,7 @@ import com.scrap_system.backend_api.repository.MaterialTemplateRepository;
 import com.scrap_system.backend_api.repository.ValuationRecordRepository;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +28,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ValuationService {
     private static final String SCOPE_VEHICLE = "VEHICLE";
     private static final String SCOPE_VEHICLE_TYPE = "VEHICLE_TYPE";
@@ -68,6 +70,14 @@ public class ValuationService {
 
     private ValuationResult calculateAndSave(Long vehicleId, VehicleModel vehicle, BigDecimal recoveryRatio, Map<String, BigDecimal> ratios, BigDecimal othersPriceOverride) {
         BigDecimal curbWeight = vehicle.getCurbWeight();
+        if (curbWeight == null || curbWeight.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Vehicle curbWeight invalid for valuation, vehicleId=" + vehicleId);
+        }
+        if (recoveryRatio == null || recoveryRatio.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Template recoveryRatio invalid for valuation, vehicleId=" + vehicleId);
+        }
+        log.info("Valuation start, vehicleId={}, curbWeight={}, recoveryRatio={}, ratioCount={}",
+                vehicleId, curbWeight, recoveryRatio, ratios == null ? 0 : ratios.size());
         List<MaterialValueItem> materialValues = ratios.entrySet().stream()
                 .filter(e -> e.getValue() != null && e.getValue().compareTo(BigDecimal.ZERO) > 0)
                 .map(e -> {
@@ -113,7 +123,7 @@ public class ValuationService {
         return materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE, String.valueOf(vehicle.getId()))
                 .or(() -> materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE_TYPE, vehicle.getVehicleType()))
                 .or(() -> materialTemplateRepository.findByVehicleType(vehicle.getVehicleType()))
-                .orElseThrow(() -> new RuntimeException("Material template not found for vehicle: " + vehicle.getId() + ", type: " + vehicle.getVehicleType()));
+                .orElseThrow(() -> new IllegalStateException("Material template not found for vehicle: " + vehicle.getId() + ", type: " + vehicle.getVehicleType()));
     }
 
     private Map<String, BigDecimal> resolveRatios(MaterialTemplate template) {

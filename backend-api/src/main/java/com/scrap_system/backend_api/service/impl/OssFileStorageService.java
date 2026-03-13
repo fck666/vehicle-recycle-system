@@ -19,28 +19,38 @@ import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 @Service
-@Profile("prod")
+@Profile("prod | local-prod")
 @Slf4j
 public class OssFileStorageService implements FileStorageService {
 
-    @Value("${aliyun.oss.endpoint}")
+    @Value("${aliyun.oss.endpoint:${spring.aliyun.oss.endpoint:}}")
     private String endpoint;
 
-    @Value("${aliyun.oss.access-key-id}")
+    @Value("${aliyun.oss.access-key-id:${spring.aliyun.oss.access-key-id:}}")
     private String accessKeyId;
 
-    @Value("${aliyun.oss.access-key-secret}")
+    @Value("${aliyun.oss.access-key-secret:${spring.aliyun.oss.access-key-secret:}}")
     private String accessKeySecret;
 
-    @Value("${aliyun.oss.bucket-name}")
+    @Value("${aliyun.oss.bucket-name:${spring.aliyun.oss.bucket-name:}}")
     private String bucketName;
     
     // Optional: Public domain for CDN/Custom Domain
-    @Value("${aliyun.oss.domain:}")
+    @Value("${aliyun.oss.domain:${spring.aliyun.oss.domain:}}")
     private String domain;
+
+    private boolean isOssConfigured() {
+        return endpoint != null && !endpoint.isBlank()
+                && accessKeyId != null && !accessKeyId.isBlank()
+                && accessKeySecret != null && !accessKeySecret.isBlank()
+                && bucketName != null && !bucketName.isBlank();
+    }
 
     @Override
     public String uploadFile(MultipartFile file, String path) {
+        if (!isOssConfigured()) {
+            throw new RuntimeException("OSS 未配置完整，缺少 endpoint/access-key-id/access-key-secret/bucket-name");
+        }
         OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
         try {
             String originalFilename = file.getOriginalFilename();
@@ -105,6 +115,10 @@ public class OssFileStorageService implements FileStorageService {
 
     @Override
     public void deleteFile(String url) {
+        if (!isOssConfigured()) {
+            log.warn("OSS 未配置完整，跳过删除文件: {}", url);
+            return;
+        }
         String key = extractKeyFromUrl(url);
         if (key == null) return;
 
@@ -122,8 +136,15 @@ public class OssFileStorageService implements FileStorageService {
 
     @Override
     public String generatePresignedUrl(String url, int expirationSeconds) {
+        if (!isOssConfigured()) {
+            log.warn("OSS not configured when generating presigned url, rawUrl={}", url);
+            return url;
+        }
         String key = extractKeyFromUrl(url);
-        if (key == null) return url;
+        if (key == null || key.isBlank()) {
+            log.warn("Cannot extract oss key from url, rawUrl={}", url);
+            return url;
+        }
 
         OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
         try {
@@ -183,7 +204,7 @@ public class OssFileStorageService implements FileStorageService {
             request.setResponseHeaders(responseHeaders);
             
             java.net.URL signedUrl = ossClient.generatePresignedUrl(request);
-            return signedUrl.toString();
+            return normalizeForMiniProgram(signedUrl.toString());
         } catch (Exception e) {
             log.error("Failed to generate presigned URL", e);
             return url;
@@ -196,6 +217,10 @@ public class OssFileStorageService implements FileStorageService {
 
     @Override
     public void fixImageMetadata(String url) {
+        if (!isOssConfigured()) {
+            log.warn("OSS 未配置完整，跳过修复元数据: {}", url);
+            return;
+        }
         String key = extractKeyFromUrl(url);
         if (key == null) return;
 
@@ -268,15 +293,35 @@ public class OssFileStorageService implements FileStorageService {
     }
 
     private String extractKeyFromUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
         try {
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                return url.startsWith("/") ? url.substring(1) : url;
+            }
             java.net.URL u = new java.net.URL(url);
-            String path = u.getPath();
+            String path = u.getPath() == null ? "" : u.getPath();
             if (path.startsWith("/")) {
                 return path.substring(1);
             }
             return path;
         } catch (Exception e) {
+            log.warn("Failed to parse url for oss key, rawUrl={}", url, e);
             return null;
         }
+    }
+
+    private String normalizeForMiniProgram(String url) {
+        if (url == null || url.isBlank()) {
+            return url;
+        }
+        int queryIndex = url.indexOf('?');
+        if (queryIndex < 0 || queryIndex >= url.length() - 1) {
+            return url;
+        }
+        String base = url.substring(0, queryIndex + 1);
+        String query = url.substring(queryIndex + 1).replace("+", "%2B");
+        return base + query;
     }
 }

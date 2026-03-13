@@ -97,10 +97,14 @@ public class AdminUserController {
         }
         try {
             UserAccount u = existing.get();
+            String previousStatus = u.getStatus();
             if (!isBlank(request.getUsername())) u.setUsername(trimOrNull(request.getUsername()));
             if (request.getPhone() != null) u.setPhone(trimOrNull(request.getPhone()));
             if (!isBlank(request.getStatus())) u.setStatus(request.getStatus().trim().toUpperCase());
             UserAccount saved = userAccountRepository.save(u);
+            if (request.getStatus() != null && previousStatus != null && !previousStatus.equalsIgnoreCase(saved.getStatus())) {
+                sessionService.revokeAll(id);
+            }
             return ResponseEntity.ok(toDto(saved, userRoleRepository.findRoleCodesByUserId(saved.getId())));
         } catch (DataIntegrityViolationException e) {
             return ResponseEntity.badRequest().build();
@@ -131,8 +135,11 @@ public class AdminUserController {
 
         try {
             applyRoles(id, roles, authentication);
+            sessionService.revokeAll(id);
             UserAccount u = existing.get();
             return ResponseEntity.ok(toDto(u, userRoleRepository.findRoleCodesByUserId(id)));
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(409).build();
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }
@@ -192,8 +199,9 @@ public class AdminUserController {
             roleIds.add(r.getId());
         }
 
-        userRoleRepository.deleteByUserId(userId);
-        for (Long rid : roleIds) {
+        userRoleRepository.deleteAllByUserId(userId);
+        userRoleRepository.flush();
+        for (Long rid : new LinkedHashSet<>(roleIds)) {
             UserRole ur = new UserRole();
             ur.setUserId(userId);
             ur.setRoleId(rid);

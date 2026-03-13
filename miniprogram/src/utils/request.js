@@ -1,4 +1,7 @@
-const BASE_URL = 'http://localhost:8090/api'; // 开发环境地址，真机调试请改为局域网IP
+const DEV_BASE_URL = 'http://localhost:8090/api';
+const PROD_BASE_URL = 'https://api.xhyscrapcar.com/api';
+const BASE_URL = process.env.NODE_ENV === 'development' ? DEV_BASE_URL : PROD_BASE_URL;
+export const API_BASE_URL = BASE_URL;
 
 const request = (options) => {
   return new Promise((resolve, reject) => {

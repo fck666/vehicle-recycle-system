@@ -29,9 +29,14 @@ public class SecurityConfig {
         http.sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         http.authorizeHttpRequests(auth -> auth
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/uploads/**").permitAll()
                 .requestMatchers("/error").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/vehicle-images/proxy").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/vehicle-images/image-proxy").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/vehicles/image-proxy").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/vehicles/proxy").permitAll()
                 .requestMatchers("/api/admin/miit-cp-jobs/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/vehicles/lookup").hasAnyRole("ADMIN", "OPERATOR")
                 .requestMatchers("/api/admin/files/upload").hasAnyRole("ADMIN", "OPERATOR")

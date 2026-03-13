@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { AdminUser } from '../api/adminUsers'
 import { createUser, resetUserPassword, revokeUserSessions, searchUsers, updateUser, updateUserRoles } from '../api/adminUsers'
+import { HttpError } from '../api/client'
 import type { Page } from '../api/types'
 
 const loading = ref(false)
@@ -96,9 +97,25 @@ async function submitEdit() {
     ElMessage.success('保存成功')
     editDialog.value = false
     load()
-  } catch {
-    ElMessage.error('保存失败（可能触发权限/最后一个管理员保护/唯一性约束）')
+  } catch (e) {
+    ElMessage.error(resolveEditError(e))
   }
+}
+
+function resolveEditError(e: unknown): string {
+  if (!(e instanceof HttpError)) {
+    return '保存失败，请稍后重试'
+  }
+  if (e.status === 403) {
+    return '保存失败：当前会话无权限，或正在修改自己的管理员角色/状态'
+  }
+  if (e.status === 409) {
+    return '保存失败：不允许移除系统最后一个管理员'
+  }
+  if (e.status === 400) {
+    return '保存失败：用户名或手机号可能已被占用'
+  }
+  return `保存失败：HTTP ${e.status}`
 }
 
 async function doResetPassword(u: AdminUser) {

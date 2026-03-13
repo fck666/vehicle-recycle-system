@@ -2,7 +2,9 @@ package com.scrap_system.backend_api.controller;
 
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
+import com.scrap_system.backend_api.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -20,9 +22,11 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/vehicles")
 @RequiredArgsConstructor
+@Slf4j
 public class VehicleController {
 
     private final VehicleModelRepository vehicleModelRepository;
+    private final FileStorageService fileStorageService;
 
     @GetMapping
     public ResponseEntity<Page<VehicleModel>> search(
@@ -76,8 +80,36 @@ public class VehicleController {
 
     @GetMapping("/{id}")
     public ResponseEntity<VehicleModel> get(@PathVariable Long id) {
+        log.info("Vehicle detail request, vehicleId={}, storageService={}", id, fileStorageService.getClass().getSimpleName());
         return vehicleModelRepository.findById(id)
+                .map(this::attachPresignedUrls)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private VehicleModel attachPresignedUrls(VehicleModel vehicle) {
+        if (vehicle.getImages() != null) {
+            vehicle.getImages().forEach(image -> {
+                if (image.getImageUrl() != null && !image.getImageUrl().trim().isEmpty()) {
+                    String originalUrl = image.getImageUrl();
+                    String presignedUrl = fileStorageService.generatePresignedUrl(originalUrl, 3600);
+                    image.setImageUrl(presignedUrl);
+                    boolean signed = presignedUrl.contains("OSSAccessKeyId=") && presignedUrl.contains("Signature=");
+                    log.info("Vehicle image url processed, vehicleId={}, changed={}, signed={}",
+                            vehicle.getId(), !originalUrl.equals(presignedUrl), signed);
+                    if (originalUrl.equals(presignedUrl)) {
+                        log.warn("Image URL unchanged after presign, vehicleId={}, url={}", vehicle.getId(), originalUrl);
+                    }
+                }
+            });
+        }
+        if (vehicle.getDocuments() != null) {
+            vehicle.getDocuments().forEach(doc -> {
+                if (doc.getDocUrl() != null && !doc.getDocUrl().trim().isEmpty()) {
+                    doc.setDocUrl(fileStorageService.generatePresignedUrl(doc.getDocUrl(), 3600));
+                }
+            });
+        }
+        return vehicle;
     }
 }

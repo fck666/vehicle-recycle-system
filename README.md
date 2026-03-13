@@ -8,6 +8,25 @@
 - MySQL 容器名：`mysql-prod`
 - 生产库名：`scrap_system`
 
+### 常用快捷命令
+
+```bash
+cd /Users/kkkfcc/Desktop/vehicle-recycle-system
+
+# 一次性赋予执行权限
+chmod +x deploy/release_all.sh deploy/release_frontend.sh scripts/run_prod_local.sh
+
+# 1) 一键发布前后端（含 nginx reload + backend-api restart）
+./deploy/release_all.sh
+
+# 2) 仅发布前端 admin-web
+./deploy/release_frontend.sh
+
+# 3) 本地启动（连接生产库，自动建 SSH 隧道）
+# 需先在 backend-api/src/main/resources/application-local-prod.yaml 配好 password
+SSH_HOST=39.105.26.34 SSH_USER=root ./scripts/run_prod_local.sh
+```
+
 ### 1) 本地构建（前后端）
 
 ```bash

@@ -118,6 +118,8 @@ public class DataInitializer implements CommandLineRunner {
     private void createTemplate(String vehicleType, BigDecimal steel, BigDecimal aluminum, BigDecimal copper, BigDecimal recovery) {
         MaterialTemplate t = new MaterialTemplate();
         t.setVehicleType(vehicleType);
+        t.setScopeType("VEHICLE_TYPE");
+        t.setScopeValue(vehicleType == null ? "" : vehicleType.trim());
         t.setSteelRatio(steel);
         t.setAluminumRatio(aluminum);
         t.setCopperRatio(copper);

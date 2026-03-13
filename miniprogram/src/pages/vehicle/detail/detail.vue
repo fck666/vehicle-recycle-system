@@ -12,6 +12,14 @@
       </view>
     </view>
 
+    <view class="card image-card" v-if="vehicleImages.length > 0">
+      <swiper class="image-swiper" indicator-dots circular autoplay :interval="4000" :duration="500">
+        <swiper-item v-for="(item, index) in vehicleImages" :key="item.id || index">
+          <image class="vehicle-image" :src="item.imageUrl" mode="aspectFill" @click="previewImage(index)" />
+        </swiper-item>
+      </swiper>
+    </view>
+
     <!-- 基本参数 -->
     <view class="card">
       <view class="card-title">基本参数</view>
@@ -87,15 +95,26 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
-import request from '../../../utils/request';
+import request, { API_BASE_URL } from '../../../utils/request';
 
 const vehicleId = ref(null);
 const vehicle = ref({});
 const valuation = ref(null);
 const isLoggedIn = ref(false);
 const isStaff = ref(false);
+const valuationLoading = ref(false);
+const vehicleImages = computed(() => {
+  const list = Array.isArray(vehicle.value?.images) ? vehicle.value.images : [];
+  return list
+    .filter(item => item?.imageUrl)
+    .map(item => ({
+      ...item,
+      imageUrl: `${API_BASE_URL}/vehicle-images/proxy?source=${encodeURIComponent(item.imageUrl)}`
+    }))
+    .sort((a, b) => (a?.sortOrder || 0) - (b?.sortOrder || 0));
+});
 
 onLoad((options) => {
   vehicleId.value = options.id;
@@ -113,22 +132,34 @@ const checkLogin = () => {
 };
 
 const loadDetail = () => {
-  request({ url: '/vehicles/' + vehicleId.value }).then(res => {
-    vehicle.value = res;
-    if (isLoggedIn.value) {
-      calculateValuation();
-    }
-  });
+  request({ url: '/vehicles/' + vehicleId.value })
+    .then(res => {
+      vehicle.value = res;
+      if (isLoggedIn.value) {
+        calculateValuation();
+      }
+    })
+    .catch(() => {
+      uni.showToast({ title: '车型详情加载失败', icon: 'none' });
+    });
 };
 
 const calculateValuation = () => {
+  if (valuationLoading.value) {
+    return;
+  }
+  valuationLoading.value = true;
   uni.showLoading({ title: '计算中...' });
   request({
     url: '/valuation/' + vehicleId.value,
     method: 'POST'
   }).then(res => {
     valuation.value = res;
+  }).catch(() => {
+    valuation.value = null;
+    uni.showToast({ title: '该车型暂无可用估值', icon: 'none' });
   }).finally(() => {
+    valuationLoading.value = false;
     uni.hideLoading();
   });
 };
@@ -139,6 +170,17 @@ const goToLogin = () => {
 
 const goToDismantle = () => {
   uni.navigateTo({ url: '/pages/dismantle/entry?vehicleId=' + vehicleId.value });
+};
+
+const previewImage = (index) => {
+  const urls = vehicleImages.value.map(item => item.imageUrl);
+  if (urls.length === 0) {
+    return;
+  }
+  uni.previewImage({
+    urls,
+    current: urls[index] || urls[0]
+  });
 };
 </script>
 
@@ -153,6 +195,9 @@ const goToDismantle = () => {
 .tag.primary { background-color: #e8f9f0; color: #07c160; }
 
 .card { background-color: #fff; margin: 10px; border-radius: 8px; padding: 15px; }
+.image-card { padding: 0; overflow: hidden; }
+.image-swiper { width: 100%; height: 220px; }
+.vehicle-image { width: 100%; height: 100%; }
 .card-title { font-size: 16px; font-weight: bold; border-left: 4px solid #07c160; padding-left: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
 .refresh-btn { font-size: 12px; color: #07c160; font-weight: normal; border: 1px solid #07c160; padding: 2px 8px; border-radius: 12px; }
 
