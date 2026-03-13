@@ -4,6 +4,12 @@ spring:
   profiles:
     active: dev,local
   # 通用默认配置
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:scrap_system}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
   jpa:
     open-in-view: true
   servlet:
@@ -39,6 +45,6 @@ app:
 # 微信小程序配置
 wx:
   miniapp:
-    appid: ${WX_MINIAPP_APPID:wx98aadc9a52af541a} # 替换为你的小程序AppID
+    appid: ${WX_MINIAPP_APPID:wx475e019dd13575e7} # 替换为你的小程序AppID
     secret: ${WX_MINIAPP_SECRET:1ba328335e8077613d37bc4a21d40831} # 替换为你的小程序Secret
     msgDataFormat: JSON

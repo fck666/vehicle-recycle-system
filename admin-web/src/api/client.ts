@@ -16,12 +16,15 @@ export async function requestJson<T>(method: HttpMethod, url: string, body?: unk
   // So we can just use relative path or respect VITE_API_BASE_URL if needed.
   // For now, we assume relative path works fine with proxy.
   
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`
+
   const token = getToken()
   const headers: Record<string, string> = {}
   if (body) headers['Content-Type'] = 'application/json'
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const resp = await fetch(url, {
+  const resp = await fetch(fullUrl, {
     method,
     headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,

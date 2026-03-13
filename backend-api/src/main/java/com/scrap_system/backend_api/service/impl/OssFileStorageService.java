@@ -72,6 +72,11 @@ public class OssFileStorageService implements FileStorageService {
             if (contentType != null) {
                 metadata.setContentType(contentType);
             }
+            // Force inline display
+            metadata.setContentDisposition("inline");
+            // Cache for 30 days
+            metadata.setCacheControl("max-age=2592000");
+            
             metadata.setContentLength(file.getSize());
             
             ossClient.putObject(bucketName, objectKey, file.getInputStream(), metadata);
@@ -182,6 +187,67 @@ public class OssFileStorageService implements FileStorageService {
         } catch (Exception e) {
             log.error("Failed to generate presigned URL", e);
             return url;
+        } finally {
+            if (ossClient != null) {
+                ossClient.shutdown();
+            }
+        }
+    }
+
+    @Override
+    public void fixImageMetadata(String url) {
+        String key = extractKeyFromUrl(url);
+        if (key == null) return;
+
+        OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
+        try {
+            // Get current metadata
+            ObjectMetadata meta = ossClient.getObjectMetadata(bucketName, key);
+            String currentType = meta.getContentType();
+            String currentDisposition = meta.getContentDisposition();
+            String currentCache = meta.getCacheControl();
+            
+            // Determine expected Content-Type
+            String expectedType = getContentType(key);
+            if (expectedType == null && currentType != null) expectedType = currentType; // Keep existing if unknown
+            
+            boolean needFix = false;
+            
+            // Check Content-Type
+            if (expectedType != null && !expectedType.equalsIgnoreCase(currentType)) {
+                needFix = true;
+            }
+            
+            // Check Content-Disposition
+            if (currentDisposition == null || !currentDisposition.equalsIgnoreCase("inline")) {
+                needFix = true;
+            }
+            
+            // Check Cache-Control (optional, but good practice)
+            if (currentCache == null || !currentCache.contains("max-age")) {
+                needFix = true;
+            }
+
+            if (needFix) {
+                log.info("Fixing metadata for key={}: Type={}->{}, Disp={}->inline", 
+                        key, currentType, expectedType, currentDisposition);
+                
+                // Copy object to itself with new metadata
+                ObjectMetadata newMeta = new ObjectMetadata();
+                if (expectedType != null) newMeta.setContentType(expectedType);
+                newMeta.setContentDisposition("inline");
+                newMeta.setCacheControl("max-age=2592000"); // 30 days
+                
+                // Preserve user metadata if any (not implemented here for simplicity)
+                
+                CopyObjectRequest copyRequest = new CopyObjectRequest(bucketName, key, bucketName, key);
+                copyRequest.setNewObjectMetadata(newMeta);
+                
+                ossClient.copyObject(copyRequest);
+                log.info("Successfully fixed metadata for key={}", key);
+            }
+        } catch (Exception e) {
+            log.error("Failed to fix metadata for key={}", key, e);
         } finally {
             if (ossClient != null) {
                 ossClient.shutdown();

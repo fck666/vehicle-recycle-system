@@ -169,6 +169,27 @@ public class AdminVehicleMediaController {
         }
     }
 
+    @PostMapping("/{vehicleId}/images/fix-metadata")
+    public ResponseEntity<Void> fixImageMetadata(@PathVariable Long vehicleId) {
+        VehicleModel vehicle = vehicleModelRepository.findById(vehicleId).orElse(null);
+        if (vehicle == null) return ResponseEntity.notFound().build();
+        
+        // Fix images
+        if (vehicle.getImages() != null) {
+            vehicle.getImages().forEach(img -> {
+                if (img.getImageUrl() != null && !img.getImageUrl().isEmpty()) {
+                    fileStorageService.fixImageMetadata(img.getImageUrl());
+                }
+            });
+        }
+        
+        // Fix documents (cover images might be in documents too? No, documents are files)
+        // But documents might be images too if user uploaded image as doc.
+        // Let's stick to images for now.
+        
+        return ResponseEntity.ok().build();
+    }
+
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
     }

@@ -24,3 +24,7 @@ export async function getSignedUrl(url: string): Promise<string> {
 export async function getHtmlContent(url: string): Promise<string> {
   return requestJson<string>('GET', `/api/admin/vehicles/media/html?url=${encodeURIComponent(url)}`)
 }
+
+export async function fixVehicleImages(vehicleId: number): Promise<void> {
+  await requestJson<void>('POST', `/api/admin/vehicles/${vehicleId}/images/fix-metadata`)
+}

@@ -10,11 +10,15 @@
     <view class="section-title">核心业务</view>
     <view class="menu-grid">
       <view class="menu-item" @click="goToPrice">
-        <view class="icon-box price-icon"></view>
+        <view class="icon-box price-icon">
+          <image class="icon-img" src="/static/icons/market.svg" mode="aspectFit"></image>
+        </view>
         <text class="menu-text">今日行情</text>
       </view>
       <view class="menu-item" @click="goToValuation">
-        <view class="icon-box valuation-icon"></view>
+        <view class="icon-box valuation-icon">
+          <image class="icon-img" src="/static/icons/valuation.svg" mode="aspectFit"></image>
+        </view>
         <text class="menu-text">车辆估值</text>
       </view>
     </view>
@@ -22,7 +26,9 @@
     <view class="section-title" v-if="isStaff">管理后台</view>
     <view class="menu-grid" v-if="isStaff">
       <view class="menu-item full-width" @click="goToDismantle">
-        <view class="icon-box dismantle-icon"></view>
+        <view class="icon-box dismantle-icon">
+          <image class="icon-img" src="/static/icons/dismantle.svg" mode="aspectFit"></image>
+        </view>
         <text class="menu-text">拆解录入</text>
       </view>
     </view>
@@ -30,7 +36,8 @@
 </template>
 
 <script setup>
-import { ref, onShow } from 'vue';
+import { ref } from 'vue';
+import { onShow } from '@dcloudio/uni-app';
 
 const isStaff = ref(false);
 
@@ -71,7 +78,8 @@ const goToDismantle = () => {
   box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
 }
 .full-width { width: calc(100% - 20px); height: 100px; flex-direction: row; }
-.icon-box { width: 40px; height: 40px; background-color: #f0f9eb; border-radius: 10px; margin-bottom: 10px; }
+.icon-box { width: 40px; height: 40px; background-color: #f0f9eb; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; }
+.icon-img { width: 22px; height: 22px; }
 .full-width .icon-box { margin-bottom: 0; margin-right: 15px; }
 .menu-text { font-size: 15px; color: #333; font-weight: 500; }
 

@@ -37,8 +37,9 @@ build/
 logs/
 *.log
 
-# Runtime uploads
-**/uploads/
+# Local scripts with secrets
+scripts/run_prod_local.sh
+scripts/run_prod_local*.sh
 
 # OS
 Thumbs.db
