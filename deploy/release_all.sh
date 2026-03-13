@@ -11,6 +11,7 @@ REMOTE_OFFICIAL_DIR="${REMOTE_OFFICIAL_DIR:-/var/www/html}"
 REMOTE_BACKEND_JAR="${REMOTE_BACKEND_JAR:-/root/backend-prod.jar}"
 LOCAL_FRONTEND_DIST="${LOCAL_FRONTEND_DIST:-$ROOT_DIR/admin-web/dist}"
 LOCAL_OFFICIAL_PAGE="${LOCAL_OFFICIAL_PAGE:-$ROOT_DIR/deploy/index.html}"
+LOCAL_OFFICIAL_FAVICON="${LOCAL_OFFICIAL_FAVICON:-$ROOT_DIR/admin-web/public/favicon.svg}"
 LOCAL_BACKEND_JAR="${LOCAL_BACKEND_JAR:-$ROOT_DIR/backend-api/target/backend-api-0.0.1-SNAPSHOT.jar}"
 
 log() {
@@ -48,14 +49,22 @@ if [[ ! -f "$LOCAL_OFFICIAL_PAGE" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$LOCAL_OFFICIAL_FAVICON" ]]; then
+  echo "官网图标不存在: $LOCAL_OFFICIAL_FAVICON" >&2
+  # 允许图标不存在，不强制退出，但给出警告
+fi
+
 log "准备服务器目录"
 run_ssh "mkdir -p '$REMOTE_FRONTEND_DIR' '$REMOTE_OFFICIAL_DIR'"
 
 log "上传前端产物"
 scp -P "$SSH_PORT" -r "$LOCAL_FRONTEND_DIST"/. "${SSH_USER}@${SSH_HOST}:${REMOTE_FRONTEND_DIR}/"
 
-log "上传官网静态页"
+log "上传官网静态页和图标"
 scp -P "$SSH_PORT" "$LOCAL_OFFICIAL_PAGE" "${SSH_USER}@${SSH_HOST}:${REMOTE_OFFICIAL_DIR}/"
+if [[ -f "$LOCAL_OFFICIAL_FAVICON" ]]; then
+  scp -P "$SSH_PORT" "$LOCAL_OFFICIAL_FAVICON" "${SSH_USER}@${SSH_HOST}:${REMOTE_OFFICIAL_DIR}/favicon.svg"
+fi
 
 log "上传后端产物"
 scp -P "$SSH_PORT" "$LOCAL_BACKEND_JAR" "${SSH_USER}@${SSH_HOST}:${REMOTE_BACKEND_JAR}"
