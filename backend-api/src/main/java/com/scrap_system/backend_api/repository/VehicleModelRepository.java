@@ -53,4 +53,25 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
         HAVING COUNT(DISTINCT d.source_url) > 1
     """, nativeQuery = true)
     List<Object[]> findIdsWithDuplicateSourceUrls();
+
+    @Query("""
+            select v from VehicleModel v
+            where v.id <> :targetId
+              and lower(v.vehicleType) = lower(:vehicleType)
+              and lower(v.fuelType) = lower(:fuelType)
+              and v.modelYear between :minYear and :maxYear
+              and (
+                   :manufacturerName is null
+                   or length(trim(:manufacturerName)) = 0
+                   or lower(coalesce(v.manufacturerName, '')) = lower(:manufacturerName)
+              )
+            """)
+    List<VehicleModel> findSameSeriesPool(
+            @Param("targetId") Long targetId,
+            @Param("manufacturerName") String manufacturerName,
+            @Param("vehicleType") String vehicleType,
+            @Param("fuelType") String fuelType,
+            @Param("minYear") Integer minYear,
+            @Param("maxYear") Integer maxYear
+    );
 }

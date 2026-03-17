@@ -7,7 +7,9 @@
         <text class="model">{{ vehicle.model }}</text>
       </view>
       <view class="batch-info">
+        <text class="tag">ID {{ vehicle.id || '-' }}</text>
         <text class="tag">第{{ vehicle.batchNo }}批</text>
+        <text class="tag">{{ sourceTypeText }}</text>
         <text class="tag primary">{{ vehicle.vehicleType }}</text>
       </view>
     </view>
@@ -33,6 +35,10 @@
           <text class="value">{{ vehicle.curbWeight ? vehicle.curbWeight + ' kg' : '-' }}</text>
         </view>
         <view class="info-item">
+          <text class="label">总质量</text>
+          <text class="value">{{ vehicle.grossWeight ? vehicle.grossWeight + ' kg' : '-' }}</text>
+        </view>
+        <view class="info-item">
           <text class="label">燃料类型</text>
           <text class="value">{{ vehicle.fuelType || '-' }}</text>
         </view>
@@ -43,6 +49,56 @@
         <view class="info-item full-width">
           <text class="label">生产厂家</text>
           <text class="value">{{ vehicle.manufacturerName || '-' }}</text>
+        </view>
+        <view class="info-item">
+          <text class="label">发布日期</text>
+          <text class="value">{{ vehicle.releaseDate || '-' }}</text>
+        </view>
+        <view class="info-item">
+          <text class="label">年份</text>
+          <text class="value">{{ vehicle.modelYear || '-' }}</text>
+        </view>
+        <view class="info-item">
+          <text class="label">产品ID</text>
+          <text class="value">{{ vehicle.productId || '-' }}</text>
+        </view>
+        <view class="info-item">
+          <text class="label">产品号</text>
+          <text class="value">{{ vehicle.productNo || '-' }}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" v-if="vehicleDocuments.length > 0">
+      <view class="card-title">文档信息</view>
+      <view class="doc-list">
+        <view class="doc-item" v-for="(doc, index) in vehicleDocuments" :key="doc.id || index">
+          <text class="doc-name">{{ doc.docName || '未命名文档' }}</text>
+          <text class="doc-meta">类型：{{ doc.docType || '-' }}</text>
+          <text class="doc-meta">抓取时间：{{ doc.fetchedAt || '-' }}</text>
+          <text class="doc-meta">来源：{{ doc.sourceUrl || '-' }}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="card-title">
+        <text>同车系参考</text>
+        <text class="series-summary" v-if="sameSeries">高置信 {{ sameSeries.highConfidenceCount }} / 中置信 {{ sameSeries.mediumConfidenceCount }}</text>
+      </view>
+      <view class="series-loading" v-if="sameSeriesLoading">加载中...</view>
+      <view class="series-empty" v-else-if="!sameSeries || !sameSeries.candidates || sameSeries.candidates.length === 0">暂无同车系候选</view>
+      <view class="series-list" v-else>
+        <view class="series-item" v-for="item in sameSeries.candidates" :key="item.vehicleId">
+          <view class="series-main">
+            <text class="series-title">#{{ item.vehicleId }} {{ item.brand }} {{ item.model }}</text>
+            <view class="series-tags">
+              <text class="series-tag" :class="item.confidenceLevel === 'HIGH' ? 'high' : 'medium'">{{ item.confidenceLevel === 'HIGH' ? '高置信' : '中置信' }}</text>
+              <text class="series-score">得分 {{ item.score }}</text>
+              <text class="series-score">{{ item.modelYear }}款</text>
+            </view>
+          </view>
+          <text class="series-reason">{{ item.matchReasons?.join('、') || '暂无匹配依据' }}</text>
         </view>
       </view>
     </view>
@@ -102,6 +158,8 @@ import request, { API_BASE_URL } from '../../../utils/request';
 const vehicleId = ref(null);
 const vehicle = ref({});
 const valuation = ref(null);
+const sameSeries = ref(null);
+const sameSeriesLoading = ref(false);
 const isLoggedIn = ref(false);
 const isStaff = ref(false);
 const valuationLoading = ref(false);
@@ -114,6 +172,18 @@ const vehicleImages = computed(() => {
       imageUrl: `${API_BASE_URL}/vehicle-images/proxy?source=${encodeURIComponent(item.imageUrl)}`
     }))
     .sort((a, b) => (a?.sortOrder || 0) - (b?.sortOrder || 0));
+});
+const vehicleDocuments = computed(() => {
+  const list = Array.isArray(vehicle.value?.documents) ? vehicle.value.documents : [];
+  return list.filter(item => item?.docUrl);
+});
+const sourceTypeText = computed(() => {
+  const map = {
+    CRAWLED: '系统采集',
+    MANUAL: '手动录入',
+    EDITED: '采集后编辑'
+  };
+  return map[vehicle.value?.sourceType] || '未知来源';
 });
 
 onLoad((options) => {
@@ -135,6 +205,7 @@ const loadDetail = () => {
   request({ url: '/vehicles/' + vehicleId.value })
     .then(res => {
       vehicle.value = res;
+      loadSameSeries();
       if (isLoggedIn.value) {
         calculateValuation();
       }
@@ -142,6 +213,23 @@ const loadDetail = () => {
     .catch(() => {
       uni.showToast({ title: '车型详情加载失败', icon: 'none' });
     });
+};
+
+const loadSameSeries = () => {
+  sameSeriesLoading.value = true;
+  request({
+    url: '/vehicles/' + vehicleId.value + '/same-series',
+    data: {
+      yearWindow: 4,
+      limit: 10
+    }
+  }).then(res => {
+    sameSeries.value = res;
+  }).catch(() => {
+    sameSeries.value = null;
+  }).finally(() => {
+    sameSeriesLoading.value = false;
+  });
 };
 
 const calculateValuation = () => {
@@ -206,6 +294,22 @@ const previewImage = (index) => {
 .full-width { width: 100%; }
 .info-item .label { font-size: 12px; color: #999; margin-bottom: 4px; }
 .info-item .value { font-size: 14px; color: #333; }
+.doc-list { display: flex; flex-direction: column; gap: 12px; }
+.doc-item { background-color: #f9f9f9; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.doc-name { font-size: 14px; color: #333; font-weight: 600; }
+.doc-meta { font-size: 12px; color: #666; }
+.series-summary { font-size: 12px; color: #999; font-weight: normal; }
+.series-loading, .series-empty { color: #999; font-size: 13px; }
+.series-list { display: flex; flex-direction: column; gap: 10px; }
+.series-item { background-color: #f9f9f9; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.series-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.series-title { font-size: 14px; font-weight: 600; color: #333; flex: 1; }
+.series-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.series-tag { font-size: 11px; border-radius: 10px; padding: 2px 8px; color: #fff; }
+.series-tag.high { background-color: #07c160; }
+.series-tag.medium { background-color: #ff9900; }
+.series-score { font-size: 12px; color: #666; }
+.series-reason { font-size: 12px; color: #666; }
 
 .valuation-result { text-align: center; padding: 10px 0; }
 .total-price { margin-bottom: 20px; color: #fa5151; }

@@ -1,5 +1,5 @@
 import { requestJson } from './client'
-import type { Page, VehicleModel, VehicleUpsertRequest } from './types'
+import type { Page, SameSeriesResponse, VehicleModel, VehicleUpsertRequest } from './types'
 
 export interface VehicleSearchParams {
   q?: string
@@ -58,4 +58,11 @@ export async function deleteVehicle(id: number): Promise<void> {
 
 export async function getVehicleFacets(): Promise<VehicleFacets> {
   return requestJson<VehicleFacets>('GET', '/api/admin/vehicles/facets')
+}
+
+export async function getSameSeriesVehicles(id: number, yearWindow = 4, limit = 20): Promise<SameSeriesResponse> {
+  const query = new URLSearchParams()
+  query.append('yearWindow', `${yearWindow}`)
+  query.append('limit', `${limit}`)
+  return requestJson<SameSeriesResponse>('GET', `/api/vehicles/${id}/same-series?${query.toString()}`)
 }

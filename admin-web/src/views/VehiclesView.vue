@@ -2,8 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { Page, VehicleDocument, VehicleImage, VehicleModel, VehicleUpsertRequest } from '../api/types'
-import { createVehicle, deleteVehicle, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
+import type { Page, SameSeriesResponse, VehicleDocument, VehicleImage, VehicleModel, VehicleUpsertRequest } from '../api/types'
+import { createVehicle, deleteVehicle, getSameSeriesVehicles, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
 import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage, getHtmlContent, getSignedUrl } from '../api/vehicleMedia'
 import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
 import type { VehicleDismantleRecord } from '../api/types'
@@ -69,8 +69,18 @@ const vehicleSearchHistoryLimit = 10
 const mediaVisible = ref(false)
 const mediaLoading = ref(false)
 const mediaVehicle = ref<VehicleModel | null>(null)
+const sameSeriesLoading = ref(false)
+const sameSeriesResult = ref<SameSeriesResponse | null>(null)
+const sameSeriesOnlyHigh = ref(false)
 const previewDocVisible = ref(false)
 const previewDocUrl = ref('')
+const sameSeriesCandidates = computed(() => {
+  const list = sameSeriesResult.value?.candidates ?? []
+  if (!sameSeriesOnlyHigh.value) {
+    return list
+  }
+  return list.filter(item => item.confidenceLevel === 'HIGH')
+})
 
 const dismantleVisible = ref(false)
 const dismantleLoading = ref(false)
@@ -372,17 +382,35 @@ async function onDelete(row: VehicleModel) {
   load()
 }
 
-async function openMedia(row: VehicleModel) {
-  mediaVisible.value = true
+async function loadMediaById(vehicleId: number) {
   mediaLoading.value = true
+  sameSeriesLoading.value = true
+  sameSeriesResult.value = null
   try {
-    mediaVehicle.value = await getVehicle(row.id)
+    const [vehicle, sameSeries] = await Promise.all([
+      getVehicle(vehicleId),
+      getSameSeriesVehicles(vehicleId, 4, 20)
+    ])
+    mediaVehicle.value = vehicle
+    sameSeriesResult.value = sameSeries
   } catch {
-    ElMessage.error('加载媒体失败')
-    mediaVisible.value = false
+    ElMessage.error('加载车型详情失败')
   } finally {
     mediaLoading.value = false
+    sameSeriesLoading.value = false
   }
+}
+
+async function openMedia(row: VehicleModel) {
+  mediaVisible.value = true
+  await loadMediaById(row.id)
+}
+
+async function jumpToSameSeriesCandidate(vehicleId: number) {
+  if (mediaVehicle.value?.id === vehicleId) {
+    return
+  }
+  await loadMediaById(vehicleId)
 }
 
 async function showDoc(url: string) {
@@ -795,9 +823,9 @@ loadFacets()
         </el-table>
       </el-card>
 
-      <el-card v-if="mediaVehicle">
+      <el-card v-if="mediaVehicle" style="margin-bottom:12px;">
         <template #header>
-          <div style="font-weight:600;">PDF/文档</div>
+          <div style="font-weight:600;">文档</div>
         </template>
         <el-table :data="mediaVehicle.documents || []" stripe>
           <el-table-column prop="docType" label="类型" width="120" />
@@ -818,6 +846,48 @@ loadFacets()
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <el-button v-if="canEdit" size="small" type="danger" @click="removeDoc(mediaVehicle!.id, row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
+      <el-card v-if="mediaVehicle" v-loading="sameSeriesLoading">
+        <template #header>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="font-weight:600;">同车系候选</div>
+              <el-switch v-model="sameSeriesOnlyHigh" active-text="仅高置信" />
+            </div>
+            <div style="font-size:12px;color:var(--el-text-color-secondary);">
+              展示 {{ sameSeriesCandidates.length }} 条 / 高置信 {{ sameSeriesResult?.highConfidenceCount || 0 }} / 中置信 {{ sameSeriesResult?.mediumConfidenceCount || 0 }}
+            </div>
+          </div>
+        </template>
+        <el-empty v-if="!sameSeriesCandidates.length" description="暂无同车系候选" :image-size="72" />
+        <el-table v-else :data="sameSeriesCandidates" stripe>
+          <el-table-column prop="vehicleId" label="ID" width="90" />
+          <el-table-column label="车型" min-width="260">
+            <template #default="{ row }">
+              <div>{{ row.brand }} {{ row.model }}</div>
+              <div style="font-size:12px;color:var(--el-text-color-secondary);">{{ row.modelYear }} / {{ row.seriesName || '-' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="匹配度" width="140">
+            <template #default="{ row }">
+              <el-tag :type="row.confidenceLevel === 'HIGH' ? 'success' : 'warning'" size="small">
+                {{ row.confidenceLevel === 'HIGH' ? '高置信' : '中置信' }}
+              </el-tag>
+              <span style="margin-left:6px;">{{ row.score }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="匹配依据" min-width="300">
+            <template #default="{ row }">
+              <span>{{ (row.matchReasons || []).join('、') || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="jumpToSameSeriesCandidate(row.vehicleId)">查看车型</el-button>
             </template>
           </el-table-column>
         </el-table>

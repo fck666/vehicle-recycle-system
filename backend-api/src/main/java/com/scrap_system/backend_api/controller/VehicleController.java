@@ -1,8 +1,10 @@
 package com.scrap_system.backend_api.controller;
 
+import com.scrap_system.backend_api.dto.SameSeriesResponse;
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import com.scrap_system.backend_api.service.FileStorageService;
+import com.scrap_system.backend_api.service.SameSeriesService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -27,6 +29,7 @@ public class VehicleController {
 
     private final VehicleModelRepository vehicleModelRepository;
     private final FileStorageService fileStorageService;
+    private final SameSeriesService sameSeriesService;
 
     @GetMapping
     public ResponseEntity<Page<VehicleModel>> search(
@@ -83,6 +86,19 @@ public class VehicleController {
         log.info("Vehicle detail request, vehicleId={}, storageService={}", id, fileStorageService.getClass().getSimpleName());
         return vehicleModelRepository.findById(id)
                 .map(this::attachPresignedUrls)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/same-series")
+    public ResponseEntity<SameSeriesResponse> sameSeries(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "4") int yearWindow,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        int safeYearWindow = Math.min(Math.max(yearWindow, 1), 8);
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        return sameSeriesService.findSameSeries(id, safeYearWindow, safeLimit)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

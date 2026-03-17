@@ -74,6 +74,32 @@ export interface VehicleUpsertRequest {
   productNo?: string | null
 }
 
+export interface SameSeriesCandidate {
+  vehicleId: number
+  brand: string
+  model: string
+  modelYear: number
+  manufacturerName?: string | null
+  vehicleType?: string | null
+  fuelType?: string | null
+  curbWeight?: number | null
+  wheelbaseMm?: number | null
+  seriesName?: string | null
+  score: number
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW'
+  matchReasons: string[]
+}
+
+export interface SameSeriesResponse {
+  targetVehicleId: number
+  targetSeriesName: string
+  yearWindow: number
+  candidateCount: number
+  highConfidenceCount: number
+  mediumConfidenceCount: number
+  candidates: SameSeriesCandidate[]
+}
+
 export interface MaterialPrice {
   id: number
   type: string
