@@ -161,8 +161,14 @@ public class ValuationService {
     }
 
     private BigDecimal getPrice(String type) {
-        return materialPriceRepository.findFirstByTypeOrderByEffectiveDateDescFetchedAtDesc(type)
+        // First try to get RECYCLE price
+        return materialPriceRepository.findFirstByTypeAndPriceCategoryOrderByEffectiveDateDesc(type, "RECYCLE")
                 .map(MaterialPrice::getPricePerKg)
+                // Fallback to MARKET price if no recycle price found (or return ZERO if strict decoupling is desired)
+                // Based on user requirement "Valuation template uses recycle price", strict decoupling is safer.
+                // However, to avoid sudden 0 value if recycle price is missing, we can fallback or just return 0.
+                // The user said "Market price decoupled from valuation system".
+                // So we should NOT fallback to market price.
                 .orElse(BigDecimal.ZERO);
     }
     

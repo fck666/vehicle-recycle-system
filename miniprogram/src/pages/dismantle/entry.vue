@@ -6,29 +6,42 @@
     </view>
 
     <view class="form-card">
-      <view class="form-item">
-        <text class="label">废钢重量 (kg)</text>
-        <input class="input" type="digit" v-model="form.steelWeight" placeholder="请输入重量" />
+      <view class="mode-switch">
+        <text class="label">录入模式</text>
+        <view class="switch-group">
+          <view :class="['switch-item', mode === 'weight' ? 'active' : '']" @click="mode = 'weight'">按重量</view>
+          <view :class="['switch-item', mode === 'ratio' ? 'active' : '']" @click="mode = 'ratio'">按比例</view>
+        </view>
       </view>
-      <view class="form-item">
-        <text class="label">废铝重量 (kg)</text>
-        <input class="input" type="digit" v-model="form.aluminumWeight" placeholder="请输入重量" />
+      
+      <view v-if="mode === 'ratio'" class="curb-weight-info">
+        整备质量: {{ vehicle.curbWeight ? vehicle.curbWeight + ' kg' : '未知' }}
       </view>
-      <view class="form-item">
-        <text class="label">废铜重量 (kg)</text>
-        <input class="input" type="digit" v-model="form.copperWeight" placeholder="请输入重量" />
+
+      <view v-for="(item, index) in dynamicItems" :key="index" class="form-item">
+        <text class="label">{{ item.label }} ({{ mode === 'weight' ? 'kg' : '%' }})</text>
+        <view class="input-wrapper">
+          <input 
+            class="input" 
+            type="digit" 
+            v-model="item.value" 
+            :placeholder="mode === 'weight' ? '输入重量' : '输入比例'"
+            :disabled="mode === 'ratio' && !vehicle.curbWeight"
+          />
+          <text v-if="mode === 'ratio' && vehicle.curbWeight" class="calc-hint">
+            ≈ {{ ((Number(item.value) / 100) * vehicle.curbWeight).toFixed(1) }} kg
+          </text>
+        </view>
       </view>
-      <view class="form-item">
-        <text class="label">电池重量 (kg)</text>
-        <input class="input" type="digit" v-model="form.batteryWeight" placeholder="请输入重量" />
-      </view>
+
       <view class="form-item">
         <text class="label">其他材料 (kg)</text>
-        <input class="input" type="digit" v-model="form.otherWeight" placeholder="请输入重量" />
+        <input class="input" type="digit" v-model="formOther" placeholder="请输入重量" />
       </view>
+      
       <view class="form-item full-width">
         <text class="label">备注信息</text>
-        <textarea class="textarea" v-model="form.remark" placeholder="请输入备注内容" />
+        <textarea class="textarea" v-model="formRemark" placeholder="请输入备注内容" />
       </view>
     </view>
 
@@ -39,49 +52,98 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import request from '../../utils/request';
 
 const vehicleId = ref(null);
 const vehicle = ref({});
-const form = reactive({
-  steelWeight: '',
-  aluminumWeight: '',
-  copperWeight: '',
-  batteryWeight: '',
-  otherWeight: '',
-  remark: ''
-});
+const mode = ref('weight');
+const dynamicItems = ref([]);
+const formOther = ref('');
+const formRemark = ref('');
+
+// Mapping for standard types
+const typeLabelMap = {
+  'steel': '废钢',
+  'aluminum': '废铝',
+  'copper': '废铜',
+  'battery': '电池',
+  'plastic': '塑料',
+  'rubber': '橡胶'
+};
 
 onLoad((options) => {
   vehicleId.value = options.vehicleId;
   loadVehicle();
+  loadRecycleTypes();
 });
 
 const loadVehicle = () => {
   request({ url: '/vehicles/' + vehicleId.value }).then(res => {
-    vehicle.value = res;
+    vehicle.value = res || {};
+  });
+};
+
+const loadRecycleTypes = () => {
+  // Use the public endpoint if available or admin one if user has role. 
+  // Miniprogram users are usually operators.
+  // Assuming we can access /api/recycle-prices/types (need to expose public or ensure auth)
+  // We added /api/admin/recycle-prices/types for admin/operator.
+  // Let's try to use that. Miniprogram request util handles auth token.
+  request({ url: '/admin/recycle-prices/types' }).then(res => {
+    const types = res || [];
+    if (types.length === 0) {
+      // If no types configured, maybe show nothing or standard ones?
+      // User said: "If no materials enabled... should only see Other".
+      dynamicItems.value = [];
+    } else {
+      dynamicItems.value = types.map(t => ({
+        type: t,
+        label: typeLabelMap[t] || t,
+        value: ''
+      }));
+    }
+  }).catch(() => {
+    // Fallback or empty
+    dynamicItems.value = [];
   });
 };
 
 const handleSubmit = () => {
-  if (!form.steelWeight && !form.aluminumWeight && !form.copperWeight && !form.batteryWeight) {
-    uni.showToast({ title: '请至少输入一项重量', icon: 'none' });
+  // Check if at least one input has value
+  const hasValue = dynamicItems.value.some(item => Number(item.value) > 0) || Number(formOther.value) > 0;
+  
+  if (!hasValue) {
+    uni.showToast({ title: '请至少输入一项数值', icon: 'none' });
     return;
   }
 
   uni.showLoading({ title: '提交中...' });
   
-  // 转换数据类型
+  let steel = 0, aluminum = 0, copper = 0, battery = 0;
+  
+  dynamicItems.value.forEach(item => {
+    let val = Number(item.value) || 0;
+    if (mode.value === 'ratio' && vehicle.value.curbWeight) {
+      val = Number(((val / 100) * vehicle.value.curbWeight).toFixed(2));
+    }
+    
+    if (item.type === 'steel') steel = val;
+    else if (item.type === 'aluminum') aluminum = val;
+    else if (item.type === 'copper') copper = val;
+    else if (item.type === 'battery') battery = val;
+    // others ignored for fixed fields, need backend support for dynamic
+  });
+
   const data = {
     vehicleId: Number(vehicleId.value),
-    steelWeight: Number(form.steelWeight) || 0,
-    aluminumWeight: Number(form.aluminumWeight) || 0,
-    copperWeight: Number(form.copperWeight) || 0,
-    batteryWeight: Number(form.batteryWeight) || 0,
-    otherWeight: Number(form.otherWeight) || 0,
-    remark: form.remark
+    steelWeight: steel,
+    aluminumWeight: aluminum,
+    copperWeight: copper,
+    batteryWeight: battery,
+    otherWeight: Number(formOther.value) || 0,
+    remark: formRemark.value
   };
 
   request({
@@ -107,12 +169,20 @@ const handleSubmit = () => {
 .title { font-size: 20px; font-weight: bold; margin-bottom: 5px; }
 .subtitle { font-size: 14px; opacity: 0.8; }
 
-.form-card { background-color: #fff; margin: 15px; border-radius: 12px; padding: 20px; display: flex; flex-wrap: wrap; }
-.form-item { width: 100%; margin-bottom: 20px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px; }
+.form-card { background-color: #fff; margin: 15px; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+.form-item { border-bottom: 1px solid #f0f0f0; padding-bottom: 10px; }
 .label { font-size: 14px; color: #666; margin-bottom: 8px; display: block; }
-.input { height: 40px; font-size: 16px; color: #333; }
-.textarea { width: 100%; height: 80px; font-size: 14px; padding-top: 10px; }
+.input-wrapper { display: flex; align-items: center; justify-content: space-between; }
+.input { height: 40px; font-size: 16px; color: #333; flex: 1; }
+.calc-hint { font-size: 12px; color: #999; margin-left: 10px; }
+.textarea { width: 100%; height: 80px; font-size: 14px; padding-top: 10px; border: 1px solid #eee; border-radius: 4px; padding: 8px; box-sizing: border-box; }
 
-.submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background-color: #fff; padding: 15px 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); }
-.submit-btn { border-radius: 25px; font-size: 16px; height: 50px; line-height: 50px; }
+.mode-switch { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.switch-group { display: flex; border: 1px solid #07c160; border-radius: 4px; overflow: hidden; }
+.switch-item { padding: 4px 12px; font-size: 12px; color: #07c160; background: #fff; }
+.switch-item.active { background: #07c160; color: #fff; }
+.curb-weight-info { font-size: 12px; color: #f0ad4e; margin-bottom: 10px; background: #fdf6ec; padding: 8px; border-radius: 4px; }
+
+.submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background-color: #fff; padding: 15px 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); z-index: 100; }
+.submit-btn { border-radius: 25px; font-size: 16px; height: 50px; line-height: 50px; background-color: #07c160; }
 </style>

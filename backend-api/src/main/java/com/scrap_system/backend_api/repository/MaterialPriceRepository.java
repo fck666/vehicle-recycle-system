@@ -36,4 +36,15 @@ public interface MaterialPriceRepository extends JpaRepository<MaterialPrice, Lo
             order by mp.effectiveDate desc, mp.fetchedAt desc
             """)
     List<MaterialPrice> findLatestOnOrBefore(@Param("type") String type, @Param("date") LocalDate date);
+
+    // Find by category (RECYCLE or MARKET)
+    List<MaterialPrice> findByPriceCategoryOrderByEffectiveDateDesc(String priceCategory);
+    
+    Optional<MaterialPrice> findByTypeAndEffectiveDateAndPriceCategory(String type, LocalDate effectiveDate, String priceCategory);
+
+    // Find latest by category
+    Optional<MaterialPrice> findFirstByTypeAndPriceCategoryOrderByEffectiveDateDesc(String type, String priceCategory);
+
+    @Query("SELECT DISTINCT mp.type FROM MaterialPrice mp WHERE mp.priceCategory = :category")
+    List<String> findDistinctTypesByCategory(@Param("category") String category);
 }

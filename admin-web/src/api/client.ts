@@ -47,14 +47,15 @@ function safeJsonParse(text: string): unknown {
 }
 
 export function getToken(): string | null {
-  const t = localStorage.getItem('admin_token')
+  const t = localStorage.getItem('token') || localStorage.getItem('admin_token')
   return t && t.trim() ? t : null
 }
 
 export function setToken(token: string | null) {
   if (!token || !token.trim()) {
+    localStorage.removeItem('token')
     localStorage.removeItem('admin_token')
     return
   }
-  localStorage.setItem('admin_token', token.trim())
+  localStorage.setItem('token', token.trim())
 }

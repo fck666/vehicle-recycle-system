@@ -44,6 +44,9 @@ public class MaterialPrice {
     @Column(name = "update_time", insertable = false, updatable = false)
     private LocalDateTime updateTime;
 
+    @Column(name = "price_category", nullable = false, length = 20)
+    private String priceCategory = "MARKET"; // MARKET or RECYCLE
+
     @PrePersist
     protected void onUpdate() {
         updateTime = LocalDateTime.now();

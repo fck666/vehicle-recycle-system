@@ -110,6 +110,13 @@
 			<artifactId>weixin-java-miniapp</artifactId>
 			<version>4.7.0</version>
 		</dependency>
+
+		<!-- EasyExcel for Recycle Price Import -->
+		<dependency>
+			<groupId>com.alibaba</groupId>
+			<artifactId>easyexcel</artifactId>
+			<version>3.3.2</version>
+		</dependency>
 	</dependencies>
 
 	<build>

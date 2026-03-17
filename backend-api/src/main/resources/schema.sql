@@ -87,8 +87,9 @@ CREATE TABLE IF NOT EXISTS material_price (
   source_name VARCHAR(64),
   source_url VARCHAR(512),
   raw_payload LONGTEXT,
+  price_category VARCHAR(20) NOT NULL DEFAULT 'MARKET' COMMENT 'MARKET or RECYCLE',
   update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_material_price_type_date (type, effective_date),
+  UNIQUE KEY uk_material_price_type_date_category (type, effective_date, price_category),
   INDEX idx_material_price_type_date (type, effective_date)
 );
 

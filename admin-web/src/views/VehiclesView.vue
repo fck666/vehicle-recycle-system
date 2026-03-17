@@ -6,6 +6,7 @@ import type { Page, SameSeriesResponse, VehicleDocument, VehicleImage, VehicleMo
 import { createVehicle, deleteVehicle, getSameSeriesVehicles, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
 import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage, getHtmlContent, getSignedUrl } from '../api/vehicleMedia'
 import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
+import { listRecycleMaterialTypes } from '../api/material'
 import type { VehicleDismantleRecord } from '../api/types'
 
 const q = ref('')
@@ -86,15 +87,42 @@ const dismantleVisible = ref(false)
 const dismantleLoading = ref(false)
 const dismantleRecords = ref<VehicleDismantleRecord[]>([])
 const currentDismantleVehicleId = ref<number | null>(null)
+const currentDismantleCurbWeight = ref<number | null>(null)
 const dismantleFormVisible = ref(false)
-const dismantleForm = reactive<Partial<VehicleDismantleRecord>>({
-  steelWeight: 0,
-  aluminumWeight: 0,
-  copperWeight: 0,
-  batteryWeight: 0,
-  otherWeight: 0,
-  remark: ''
+const dismantleMode = ref<'weight' | 'ratio'>('weight')
+const recycleMaterialTypes = ref<string[]>([])
+
+// Mapping for standard types
+const typeLabelMap: Record<string, string> = {
+  'steel': '钢',
+  'aluminum': '铝',
+  'copper': '铜',
+  'battery': '电池',
+  'plastic': '塑料',
+  'rubber': '橡胶'
+}
+
+// Compute dynamic columns based on recycleMaterialTypes
+// If types are loaded, we show columns for them.
+// If types list is empty (no recycle price configured), we might want to fallback or show nothing.
+// But we should probably fetch types when opening list dialog too, or just fetch once.
+// Let's fetch types when mounting or opening list.
+const dynamicDismantleColumns = computed(() => {
+  return recycleMaterialTypes.value.map(t => ({
+    prop: t + 'Weight', // We need to ensure backend returns these fields or we map them from detailsJson
+    label: typeLabelMap[t] || t
+  }))
 })
+
+// Use a map to store dynamic values. Standard keys map to fixed fields, others to detailsJson if backend supported.
+// But current backend only supports fixed fields + otherWeight + detailsJson?
+// User said: "All enabled recycle materials should appear".
+// Current backend fixed fields: steel, aluminum, copper, battery, other.
+// If dynamic types come, we need to map them.
+// For now, let's assume dynamic types are mostly these standard ones, plus maybe others.
+// We will store them in a reactive dictionary.
+const dismantleFormItems = ref<{ type: string; label: string; weight: number; ratio: number }[]>([])
+const dismantleFormRemark = ref('')
 
 const form = reactive<VehicleUpsertRequest>({
   brand: '',
@@ -479,9 +507,22 @@ function buildHtmlBlobUrl(rawHtml: string, baseUrl: string): string {
 }
 
 async function loadDismantleRecords(vehicleId: number) {
+  currentDismantleVehicleId.value = vehicleId
   dismantleLoading.value = true
   try {
-    dismantleRecords.value = await getDismantleRecords(vehicleId)
+    try {
+      const types = await listRecycleMaterialTypes()
+      recycleMaterialTypes.value = types && types.length > 0 ? types : []
+    } catch {
+      recycleMaterialTypes.value = []
+    }
+
+    const [records, vehicle] = await Promise.all([
+      getDismantleRecords(vehicleId),
+      getVehicle(vehicleId)
+    ])
+    dismantleRecords.value = records
+    currentDismantleCurbWeight.value = vehicle.curbWeight ?? null
   } catch (e) {
     ElMessage.error('加载拆解记录失败')
   } finally {
@@ -495,28 +536,62 @@ function openDismantle(row: VehicleModel) {
   loadDismantleRecords(row.id)
 }
 
-function openDismantleForm() {
-  dismantleForm.steelWeight = 0
-  dismantleForm.aluminumWeight = 0
-  dismantleForm.copperWeight = 0
-  dismantleForm.batteryWeight = 0
-  dismantleForm.otherWeight = 0
-  dismantleForm.remark = ''
+async function openDismantleForm() {
+  try {
+    const types = await listRecycleMaterialTypes()
+    recycleMaterialTypes.value = types && types.length > 0 ? types : []
+  } catch {
+    recycleMaterialTypes.value = []
+  }
+
+  const mapping: Record<string, string> = {
+    'steel': '钢',
+    'aluminum': '铝',
+    'copper': '铜',
+    'battery': '电池',
+    'plastic': '塑料',
+    'rubber': '橡胶'
+  }
+  
+  dismantleFormItems.value = recycleMaterialTypes.value.map(t => ({
+    type: t,
+    label: mapping[t] || t,
+    weight: 0,
+    ratio: 0
+  }))
+  
+  dismantleFormOther.value = 0
+  dismantleFormRemark.value = ''
+  dismantleMode.value = 'weight'
   dismantleFormVisible.value = true
 }
 
 async function submitDismantle() {
   if (!currentDismantleVehicleId.value) return
   
+  let steel = 0, aluminum = 0, copper = 0, battery = 0
+  
+  dismantleFormItems.value.forEach(item => {
+    let w = item.weight
+    if (dismantleMode.value === 'ratio' && currentDismantleCurbWeight.value) {
+      w = Number(((item.ratio / 100) * currentDismantleCurbWeight.value).toFixed(2))
+    }
+    
+    if (item.type === 'steel') steel = w
+    else if (item.type === 'aluminum') aluminum = w
+    else if (item.type === 'copper') copper = w
+    else if (item.type === 'battery') battery = w
+  })
+  
   try {
     await createDismantleRecord({
       vehicleId: currentDismantleVehicleId.value,
-      steelWeight: dismantleForm.steelWeight || 0,
-      aluminumWeight: dismantleForm.aluminumWeight || 0,
-      copperWeight: dismantleForm.copperWeight || 0,
-      batteryWeight: dismantleForm.batteryWeight || 0,
-      otherWeight: dismantleForm.otherWeight || 0,
-      remark: dismantleForm.remark
+      steelWeight: steel,
+      aluminumWeight: aluminum,
+      copperWeight: copper,
+      batteryWeight: battery,
+      otherWeight: dismantleFormOther.value,
+      remark: dismantleFormRemark.value
     } as any)
     ElMessage.success('已保存')
     dismantleFormVisible.value = false
@@ -525,6 +600,8 @@ async function submitDismantle() {
     ElMessage.error('保存失败')
   }
 }
+
+const dismantleFormOther = ref(0)
 
 async function deleteDismantle(id: number) {
   try {
@@ -899,13 +976,24 @@ loadFacets()
     <div style="margin-bottom:12px;text-align:right;">
       <el-button type="primary" @click="openDismantleForm">新增记录</el-button>
     </div>
-    <el-table :data="dismantleRecords" v-loading="dismantleLoading" stripe border>
+    
+    <div v-if="!dismantleRecords || dismantleRecords.length === 0" style="text-align:center;padding:40px;color:var(--el-text-color-secondary);">
+      暂无拆解记录
+    </div>
+    
+    <el-table v-else :data="dismantleRecords" v-loading="dismantleLoading" stripe border>
       <el-table-column prop="createdAt" label="录入时间" width="160" />
       <el-table-column prop="operatorName" label="操作员" width="120" />
-      <el-table-column prop="steelWeight" label="钢(kg)" width="100" />
-      <el-table-column prop="aluminumWeight" label="铝(kg)" width="100" />
-      <el-table-column prop="copperWeight" label="铜(kg)" width="100" />
-      <el-table-column prop="batteryWeight" label="电池(kg)" width="100" />
+      
+      <!-- Dynamic columns -->
+      <el-table-column 
+        v-for="col in dynamicDismantleColumns" 
+        :key="col.prop" 
+        :prop="col.prop" 
+        :label="col.label + '(kg)'" 
+        width="100" 
+      />
+      
       <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
       <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
       <el-table-column label="操作" width="100" fixed="right">
@@ -916,25 +1004,41 @@ loadFacets()
     </el-table>
   </el-dialog>
 
-  <el-dialog v-model="dismantleFormVisible" title="录入拆解数据" width="500px">
-    <el-form label-width="100px">
-      <el-form-item label="钢重量(kg)">
-        <el-input-number v-model="dismantleForm.steelWeight" :min="0" :precision="2" style="width:100%" />
+  <el-dialog v-model="dismantleFormVisible" title="录入拆解数据" width="550px">
+    <el-form label-width="120px">
+      <el-form-item label="录入模式">
+        <el-radio-group v-model="dismantleMode">
+          <el-radio-button label="weight">按重量(kg)</el-radio-button>
+          <el-radio-button label="ratio">按比例(%)</el-radio-button>
+        </el-radio-group>
+        <div v-if="dismantleMode === 'ratio'" style="margin-left:12px;font-size:12px;color:var(--el-text-color-secondary);">
+          整备质量: {{ currentDismantleCurbWeight ? currentDismantleCurbWeight + ' kg' : '未知' }}
+        </div>
       </el-form-item>
-      <el-form-item label="铝重量(kg)">
-        <el-input-number v-model="dismantleForm.aluminumWeight" :min="0" :precision="2" style="width:100%" />
-      </el-form-item>
-      <el-form-item label="铜重量(kg)">
-        <el-input-number v-model="dismantleForm.copperWeight" :min="0" :precision="2" style="width:100%" />
-      </el-form-item>
-      <el-form-item label="电池重量(kg)">
-        <el-input-number v-model="dismantleForm.batteryWeight" :min="0" :precision="2" style="width:100%" />
-      </el-form-item>
-      <el-form-item label="其他重量(kg)">
-        <el-input-number v-model="dismantleForm.otherWeight" :min="0" :precision="2" style="width:100%" />
+
+      <div v-for="item in dismantleFormItems" :key="item.type">
+        <el-form-item :label="item.label">
+          <div style="display:flex;align-items:center;gap:8px;width:100%;">
+            <template v-if="dismantleMode === 'weight'">
+              <el-input-number v-model="item.weight" :min="0" :precision="2" style="flex:1;" />
+              <span style="width:30px;">kg</span>
+            </template>
+            <template v-else>
+              <el-input-number v-model="item.ratio" :min="0" :max="100" :precision="2" style="flex:1;" :disabled="!currentDismantleCurbWeight" />
+              <span style="width:30px;">%</span>
+              <span v-if="currentDismantleCurbWeight" style="color:var(--el-text-color-secondary;font-size:12px;width:80px;text-align:right;">
+                ≈ {{ ((item.ratio / 100) * currentDismantleCurbWeight).toFixed(1) }} kg
+              </span>
+            </template>
+          </div>
+        </el-form-item>
+      </div>
+
+      <el-form-item label="其他(kg)">
+        <el-input-number v-model="dismantleFormOther" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
       <el-form-item label="备注">
-        <el-input type="textarea" v-model="dismantleForm.remark" rows="3" />
+        <el-input type="textarea" v-model="dismantleFormRemark" rows="3" />
       </el-form-item>
     </el-form>
     <template #footer>

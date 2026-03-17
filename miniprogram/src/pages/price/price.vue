@@ -1,11 +1,14 @@
 <template>
   <view class="container">
-    <view class="header">今日材料行情</view>
+    <view class="tabs">
+      <view :class="['tab-item', activeTab === 'market' ? 'active' : '']" @click="activeTab = 'market'">今日行情</view>
+      <view :class="['tab-item', activeTab === 'recycle' ? 'active' : '']" @click="activeTab = 'recycle'">回收指导价</view>
+    </view>
     
     <view v-if="loading" class="loading">加载中...</view>
     
     <view v-else class="price-list">
-      <view v-for="(item, index) in prices" :key="index" class="price-item" @click="goHistory(item)">
+      <view v-for="(item, index) in currentPrices" :key="index" class="price-item" @click="goHistory(item)">
         <view class="info">
           <text class="name">{{ getMaterialName(item) }}</text>
           <text class="date">{{ item.effectiveDate || '无日期' }}</text>
@@ -13,21 +16,26 @@
         <view class="value">
           <text class="price-num">{{ getPrice(item) }}</text>
           <text class="unit">{{ getUnit(item) }}</text>
-          <text class="hint">查看历史</text>
+          <text class="hint" v-if="activeTab === 'market'">查看历史</text>
         </view>
       </view>
     </view>
     
-    <view class="empty" v-if="!loading && prices.length === 0">暂无数据</view>
+    <view class="empty" v-if="!loading && currentPrices.length === 0">暂无数据</view>
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import request from '../../utils/request';
 
-const prices = ref([]);
+const marketPrices = ref([]);
+const recyclePrices = ref([]);
+const activeTab = ref('market');
 const loading = ref(true);
+
+const currentPrices = computed(() => activeTab.value === 'market' ? marketPrices.value : recyclePrices.value);
+
 const materialNameMap = {
   steel: '钢材',
   aluminum: '铝材',
@@ -47,10 +55,12 @@ const fetchPrices = () => {
   loading.value = true;
   Promise.all([
     request({ url: '/material-prices' }),
+    request({ url: '/recycle-prices' }).catch(() => []),
     request({ url: '/material-sources' }).catch(() => [])
   ])
-    .then(([priceRes, sourceRes]) => {
-      prices.value = priceRes || [];
+    .then(([marketRes, recycleRes, sourceRes]) => {
+      marketPrices.value = marketRes || [];
+      recyclePrices.value = recycleRes || [];
       sourceNameMap.value = buildSourceNameMap(sourceRes || []);
     })
     .catch(err => {
@@ -101,6 +111,7 @@ const getUnit = (item) => {
 };
 
 const goHistory = (item) => {
+  if (activeTab.value !== 'market') return; // Only market prices have history crawler
   const type = item?.type || '';
   if (!type) {
     return;
@@ -115,7 +126,10 @@ const goHistory = (item) => {
 
 <style>
 .container { background-color: #f5f5f5; min-height: 100vh; padding-bottom: 20px; }
-.header { padding: 15px; font-size: 18px; font-weight: bold; background: #fff; border-bottom: 1px solid #eee; }
+.tabs { display: flex; background: #fff; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 10; }
+.tab-item { flex: 1; text-align: center; padding: 15px 0; font-size: 16px; color: #666; position: relative; }
+.tab-item.active { color: #007aff; font-weight: 600; }
+.tab-item.active::after { content: ''; position: absolute; bottom: 0; left: 25%; width: 50%; height: 2px; background-color: #007aff; }
 .price-list { margin-top: 10px; }
 .price-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #fff; border-bottom: 1px solid #f0f0f0; }
 .info { display: flex; flex-direction: column; }

@@ -135,7 +135,7 @@ load()
   <el-card>
     <template #header>
       <div style="display:flex;align-items:center;justify-content:space-between;">
-        <div>材料价格</div>
+        <div>大盘行情（仅展示）</div>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </div>
     </template>

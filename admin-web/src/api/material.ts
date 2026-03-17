@@ -1,8 +1,33 @@
-import { requestJson } from './client'
+import { requestJson, getToken } from './client'
 import type { MaterialPrice, MaterialRatioItem, MaterialSourceConfig, MaterialSourceSuggestResult, MaterialTemplate } from './types'
 
 export async function listMaterialPrices(): Promise<MaterialPrice[]> {
   return requestJson<MaterialPrice[]>('GET', '/api/material-prices')
+}
+
+export async function listRecyclePrices(): Promise<MaterialPrice[]> {
+  return requestJson<MaterialPrice[]>('GET', '/api/admin/recycle-prices')
+}
+
+export async function listRecycleMaterialTypes(): Promise<string[]> {
+  return requestJson<string[]>('GET', '/api/admin/recycle-prices/types')
+}
+
+export async function importRecyclePrices(file: File): Promise<void> {
+  const formData = new FormData()
+  formData.append('file', file)
+  
+  const token = getToken()
+  const res = await fetch('/api/admin/recycle-prices/import', {
+    method: 'POST',
+    headers: token ? { 'Authorization': `Bearer ${token}` } : undefined,
+    body: formData
+  })
+  
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `Upload failed: ${res.status}`)
+  }
 }
 
 export async function upsertMaterialPrice(payload: { type: string; pricePerKg: number; currency?: string; unit?: string; effectiveDate?: string }): Promise<MaterialPrice> {
