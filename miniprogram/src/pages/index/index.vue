@@ -25,11 +25,17 @@
 
     <view class="section-title" v-if="isStaff">管理后台</view>
     <view class="menu-grid" v-if="isStaff">
-      <view class="menu-item full-width" @click="goToDismantle">
+      <view class="menu-item" @click="goToDismantle">
         <view class="icon-box dismantle-icon">
           <image class="icon-img" src="/static/icons/dismantle.svg" mode="aspectFit"></image>
         </view>
         <text class="menu-text">拆解录入</text>
+      </view>
+      <view class="menu-item" @click="goToDismantleRecords">
+        <view class="icon-box records-icon">
+          <image class="icon-img" src="/static/icons/dismantle.svg" mode="aspectFit"></image>
+        </view>
+        <text class="menu-text">拆解记录</text>
       </view>
     </view>
   </view>
@@ -50,10 +56,13 @@ const goToPrice = () => {
   uni.navigateTo({ url: '/pages/price/price' });
 };
 const goToValuation = () => {
-  uni.navigateTo({ url: '/pages/vehicle/list/list' });
+  uni.navigateTo({ url: '/pages/vehicle/list/list?mode=valuation' });
 };
 const goToDismantle = () => {
-  uni.navigateTo({ url: '/pages/vehicle/list/list' });
+  uni.navigateTo({ url: '/pages/vehicle/list/list?mode=dismantle' });
+};
+const goToDismantleRecords = () => {
+  uni.navigateTo({ url: '/pages/vehicle/list/list?mode=dismantle_records' });
 };
 </script>
 
@@ -86,4 +95,5 @@ const goToDismantle = () => {
 .price-icon { background-color: #e8f4ff; }
 .valuation-icon { background-color: #fdf6ec; }
 .dismantle-icon { background-color: #f0f9eb; }
+.records-icon { background-color: #e6f7ff; }
 </style>

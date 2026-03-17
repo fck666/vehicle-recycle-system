@@ -58,7 +58,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue';
-import { onReachBottom } from '@dcloudio/uni-app';
+import { onReachBottom, onLoad } from '@dcloudio/uni-app';
 import request from '../../../utils/request';
 
 const vehicleList = ref([]);
@@ -67,6 +67,13 @@ const finished = ref(false);
 const facets = reactive({ brands: [] });
 const searchHistory = ref([]);
 const searchHistoryLimit = 10;
+const mode = ref('');
+
+onLoad((options) => {
+  if (options.mode) {
+    mode.value = options.mode;
+  }
+});
 
 const queryParams = reactive({
   page: 0,
@@ -77,7 +84,8 @@ const queryParams = reactive({
 
 const getSearchHistoryKey = () => {
   const userId = uni.getStorageSync('userId') || 'anonymous';
-  return `mp_vehicle_search_history_${userId}`;
+  const prefix = mode.value ? `mp_vehicle_search_${mode.value}_history_` : 'mp_vehicle_search_history_';
+  return `${prefix}${userId}`;
 };
 
 const loadSearchHistory = () => {
@@ -187,7 +195,11 @@ const selectBrand = (brand) => {
 };
 
 const goToDetail = (id) => {
-  uni.navigateTo({ url: '/pages/vehicle/detail/detail?id=' + id });
+  if (mode.value === 'dismantle_records') {
+    uni.navigateTo({ url: '/pages/dismantle/records?vehicleId=' + id });
+  } else {
+    uni.navigateTo({ url: `/pages/vehicle/detail/detail?id=${id}&mode=${mode.value}` });
+  }
 };
 </script>
 

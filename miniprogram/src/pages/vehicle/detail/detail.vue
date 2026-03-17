@@ -144,7 +144,7 @@
     </view>
 
     <!-- 底部按钮 -->
-    <view class="footer-bar" v-if="isStaff">
+    <view class="footer-bar" v-if="isStaff && mode === 'dismantle'">
       <button class="action-btn" type="primary" @click="goToDismantle">录入拆解数据</button>
     </view>
   </view>
@@ -156,6 +156,7 @@ import { onLoad } from '@dcloudio/uni-app';
 import request, { API_BASE_URL } from '../../../utils/request';
 
 const vehicleId = ref(null);
+const mode = ref('');
 const vehicle = ref({});
 const valuation = ref(null);
 const sameSeries = ref(null);
@@ -188,6 +189,9 @@ const sourceTypeText = computed(() => {
 
 onLoad((options) => {
   vehicleId.value = options.id;
+  if (options.mode) {
+    mode.value = options.mode;
+  }
   checkLogin();
   loadDetail();
 });

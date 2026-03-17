@@ -28,6 +28,7 @@ async function logout() {
       <el-menu :default-active="(route.path as string)" @select="onSelect" class="menu">
         <el-menu-item index="/">概览</el-menu-item>
         <el-menu-item index="/vehicles">车型管理</el-menu-item>
+        <el-menu-item index="/dismantle-records">拆解记录</el-menu-item>
         <el-menu-item v-if="isAdmin" index="/vehicle-mappings">车型关联</el-menu-item>
         <el-menu-item index="/recycle-prices">回收价格</el-menu-item>
         <el-menu-item index="/material-prices">大盘行情</el-menu-item>

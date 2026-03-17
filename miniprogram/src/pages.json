@@ -45,6 +45,12 @@
       }
     },
     {
+      "path": "pages/dismantle/records",
+      "style": {
+        "navigationBarTitleText": "拆解记录"
+      }
+    },
+    {
       "path": "pages/profile/profile",
       "style": {
         "navigationBarTitleText": "个人中心"
