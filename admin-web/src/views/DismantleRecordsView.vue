@@ -268,7 +268,8 @@ async function load() {
       page: page.value,
       size: size.value,
       ...advParams,
-      sort: sortProp.value ? `${sortProp.value},${sortOrder.value === 'ascending' ? 'asc' : 'desc'}` : undefined
+      sort: sortProp.value ? `${sortProp.value},${sortOrder.value === 'ascending' ? 'asc' : 'desc'}` : undefined,
+      hasDismantleRecord: true
     }
     result.value = await searchVehicles(params)
   } catch (e: any) {
@@ -713,7 +714,6 @@ loadFacets()
               {{ isAdvSearchExpanded ? '收起筛选' : '高级搜索' }}
             </el-button>
           </div>
-          <el-button v-if="canEdit" type="primary" @click="openCreate">新增车型</el-button>
         </div>
         <div v-if="vehicleSearchHistory.length" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span style="font-size:12px;color:var(--el-text-color-secondary);">搜索历史</span>
@@ -853,12 +853,9 @@ loadFacets()
           <span v-else style="color:var(--el-text-color-placeholder);">无</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="100" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openMedia(row)">媒体</el-button>
-          <el-button link type="primary" size="small" @click="openDismantle(row)">拆解记录</el-button>
-          <el-button v-if="canEdit" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="canEdit" link type="danger" size="small" @click="onDelete(row)">删除</el-button>
+          <el-button link type="primary" size="small" @click="openDismantle(row)">编辑记录</el-button>
         </template>
       </el-table-column>
     </el-table>

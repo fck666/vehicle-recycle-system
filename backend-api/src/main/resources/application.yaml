@@ -34,7 +34,7 @@ server:
 app:
   security:
     jwt:
-      secret: ${JWT_SECRET:}
+      secret: ${JWT_SECRET:r5l0h4jdVSUTwC6AHU9vUiQ8xWOi80I69we3x2wWxHjdD3ZbNYaEfGWECjD4ebKlbgJr-OXAwhltfxrNbqIWyw}
       ttl-seconds: 86400
       issuer: vehicle-recycle-system
   material-price-fetch:
