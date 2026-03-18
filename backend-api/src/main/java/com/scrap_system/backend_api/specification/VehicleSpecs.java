@@ -8,6 +8,9 @@ import jakarta.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.scrap_system.backend_api.model.VehicleDismantleRecord;
+import jakarta.persistence.criteria.Subquery;
+
 public class VehicleSpecs {
 
     public static Specification<VehicleModel> withDynamicQuery(
@@ -18,7 +21,8 @@ public class VehicleSpecs {
             List<String> fuelTypes,
             List<String> productIds,
             Integer batchNoMin,
-            Integer batchNoMax
+            Integer batchNoMax,
+            Boolean hasDismantleRecord
     ) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -67,6 +71,14 @@ public class VehicleSpecs {
             }
             if (batchNoMax != null) {
                 predicates.add(cb.le(root.get("batchNo"), batchNoMax));
+            }
+
+            // 8. 是否有拆解记录
+            if (Boolean.TRUE.equals(hasDismantleRecord)) {
+                Subquery<Long> subquery = query.subquery(Long.class);
+                jakarta.persistence.criteria.Root<VehicleDismantleRecord> dismantleRoot = subquery.from(VehicleDismantleRecord.class);
+                subquery.select(dismantleRoot.get("vehicleId"));
+                predicates.add(root.get("id").in(subquery));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

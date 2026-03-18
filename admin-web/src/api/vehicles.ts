@@ -13,6 +13,7 @@ export interface VehicleSearchParams {
   page?: number
   size?: number
   sort?: string
+  hasDismantleRecord?: boolean
 }
 
 export interface VehicleFacets {
@@ -32,6 +33,7 @@ export async function searchVehicles(params: VehicleSearchParams): Promise<Page<
   if (params.sourceTypes) params.sourceTypes.forEach(s => query.append('sourceTypes', s))
   if (params.batchNoMin !== undefined) query.append('batchNoMin', params.batchNoMin.toString())
   if (params.batchNoMax !== undefined) query.append('batchNoMax', params.batchNoMax.toString())
+  if (params.hasDismantleRecord) query.append('hasDismantleRecord', 'true')
   
   query.append('page', (params.page || 0).toString())
   query.append('size', (params.size || 20).toString())

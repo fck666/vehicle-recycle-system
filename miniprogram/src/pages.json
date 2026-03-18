@@ -17,7 +17,7 @@
     {
       "path": "pages/price/price",
       "style": {
-        "navigationBarTitleText": "今日行情"
+        "navigationBarTitleText": "回收价"
       }
     },
     {

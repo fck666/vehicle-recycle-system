@@ -61,6 +61,7 @@ public class AdminVehicleController {
             @RequestParam(required = false) List<String> fuelTypes,
             @RequestParam(required = false) Integer batchNoMin,
             @RequestParam(required = false) Integer batchNoMax,
+            @RequestParam(required = false) Boolean hasDismantleRecord,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String sort
@@ -86,7 +87,7 @@ public class AdminVehicleController {
         PageRequest pageable = PageRequest.of(safePage, safeSize, sortObj);
 
         Specification<VehicleModel> spec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
-                q, brands, manufacturers, vehicleTypes, fuelTypes, null, batchNoMin, batchNoMax
+                q, brands, manufacturers, vehicleTypes, fuelTypes, null, batchNoMin, batchNoMax, hasDismantleRecord
         );
 
         return ResponseEntity.ok(vehicleModelRepository.findAll(spec, pageable));

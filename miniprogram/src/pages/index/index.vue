@@ -13,7 +13,7 @@
         <view class="icon-box price-icon">
           <image class="icon-img" src="/static/icons/market.svg" mode="aspectFit"></image>
         </view>
-        <text class="menu-text">今日行情</text>
+        <text class="menu-text">回收价</text>
       </view>
       <view class="menu-item" @click="goToValuation">
         <view class="icon-box valuation-icon">

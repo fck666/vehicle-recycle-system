@@ -1,8 +1,8 @@
 <template>
   <view class="container">
     <view class="tabs">
-      <view :class="['tab-item', activeTab === 'market' ? 'active' : '']" @click="activeTab = 'market'">今日行情</view>
-      <view :class="['tab-item', activeTab === 'recycle' ? 'active' : '']" @click="activeTab = 'recycle'">回收指导价</view>
+      <view :class="['tab-item', activeTab === 'recycle' ? 'active' : '']" @click="activeTab = 'recycle'">回收价格</view>
+      <view :class="['tab-item', activeTab === 'market' ? 'active' : '']" @click="activeTab = 'market'">今日行情价</view>
     </view>
     
     <view v-if="loading" class="loading">加载中...</view>
@@ -31,7 +31,7 @@ import request from '../../utils/request';
 
 const marketPrices = ref([]);
 const recyclePrices = ref([]);
-const activeTab = ref('market');
+const activeTab = ref('recycle');
 const loading = ref(true);
 
 const currentPrices = computed(() => activeTab.value === 'market' ? marketPrices.value : recyclePrices.value);

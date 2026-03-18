@@ -162,6 +162,9 @@ const loadData = (reset = false) => {
   if (queryParams.brand) {
     params.brands = queryParams.brand;
   }
+  if (mode.value === 'dismantle_records') {
+    params.hasDismantleRecord = true;
+  }
 
   request({
     url: '/vehicles',
