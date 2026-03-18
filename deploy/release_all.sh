@@ -9,10 +9,13 @@ BACKEND_SERVICE="${BACKEND_SERVICE:-backend-api}"
 REMOTE_FRONTEND_DIR="${REMOTE_FRONTEND_DIR:-/var/www/html/admin}"
 REMOTE_OFFICIAL_DIR="${REMOTE_OFFICIAL_DIR:-/var/www/html}"
 REMOTE_BACKEND_JAR="${REMOTE_BACKEND_JAR:-/root/backend-prod.jar}"
+REMOTE_BACKEND_ENV_FILE="${REMOTE_BACKEND_ENV_FILE:-/etc/vehicle-recycle-system/backend-api.env}"
+REMOTE_BACKEND_ENV_DIR="$(dirname "$REMOTE_BACKEND_ENV_FILE")"
 LOCAL_FRONTEND_DIST="${LOCAL_FRONTEND_DIST:-$ROOT_DIR/admin-web/dist}"
 LOCAL_OFFICIAL_PAGE="${LOCAL_OFFICIAL_PAGE:-$ROOT_DIR/deploy/index.html}"
 LOCAL_OFFICIAL_FAVICON="${LOCAL_OFFICIAL_FAVICON:-$ROOT_DIR/admin-web/public/favicon.svg}"
 LOCAL_BACKEND_JAR="${LOCAL_BACKEND_JAR:-$ROOT_DIR/backend-api/target/backend-api-0.0.1-SNAPSHOT.jar}"
+LOCAL_BACKEND_ENV_FILE="${LOCAL_BACKEND_ENV_FILE:-}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%F %T')" "$1"
@@ -68,6 +71,22 @@ fi
 
 log "上传后端产物"
 scp -P "$SSH_PORT" "$LOCAL_BACKEND_JAR" "${SSH_USER}@${SSH_HOST}:${REMOTE_BACKEND_JAR}"
+
+if [[ -n "$LOCAL_BACKEND_ENV_FILE" ]]; then
+  if [[ ! -f "$LOCAL_BACKEND_ENV_FILE" ]]; then
+    echo "指定的环境变量文件不存在: $LOCAL_BACKEND_ENV_FILE" >&2
+    exit 1
+  fi
+  log "上传后端环境变量文件"
+  run_ssh "sudo mkdir -p '$REMOTE_BACKEND_ENV_DIR'"
+  scp -P "$SSH_PORT" "$LOCAL_BACKEND_ENV_FILE" "${SSH_USER}@${SSH_HOST}:/tmp/backend-api.env"
+  run_ssh "sudo mv /tmp/backend-api.env '$REMOTE_BACKEND_ENV_FILE' && sudo chmod 600 '$REMOTE_BACKEND_ENV_FILE'"
+fi
+
+log "检查后端环境变量是否齐全"
+run_ssh "test -f '$REMOTE_BACKEND_ENV_FILE' || (echo '缺少环境变量文件: $REMOTE_BACKEND_ENV_FILE' >&2; exit 1)"
+run_ssh "grep -qE '^WX_MINIAPP_SECRET=' '$REMOTE_BACKEND_ENV_FILE' || (echo '缺少 WX_MINIAPP_SECRET（小程序登录会失败）' >&2; exit 1)"
+run_ssh "grep -qE '^JWT_SECRET=' '$REMOTE_BACKEND_ENV_FILE' || (echo '缺少 JWT_SECRET（后端将无法启动）' >&2; exit 1)"
 
 log "重启服务器前后端服务"
 run_ssh "sudo nginx -t && sudo systemctl reload nginx && sudo systemctl restart '$BACKEND_SERVICE' && sudo systemctl status '$BACKEND_SERVICE' --no-pager"

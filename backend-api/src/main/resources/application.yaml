@@ -34,7 +34,7 @@ server:
 app:
   security:
     jwt:
-      secret: r5l0h4jdVSUTwC6AHU9vUiQ8xWOi80I69we3x2wWxHjdD3ZbNYaEfGWECjD4ebKlbgJr-OXAwhltfxrNbqIWyw
+      secret: ${JWT_SECRET:}
       ttl-seconds: 86400
       issuer: vehicle-recycle-system
   material-price-fetch:
@@ -45,6 +45,6 @@ app:
 # 微信小程序配置
 wx:
   miniapp:
-    appid: ${WX_MINIAPP_APPID:wx475e019dd13575e7} # 替换为你的小程序AppID
-    secret: ${WX_MINIAPP_SECRET:1ba328335e8077613d37bc4a21d40831} # 替换为你的小程序Secret
+    appid: ${WX_MINIAPP_APPID:wx475e019dd13575e7}
+    secret: ${WX_MINIAPP_SECRET:}
     msgDataFormat: JSON
