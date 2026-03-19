@@ -72,6 +72,20 @@ const mode = ref('');
 onLoad((options) => {
   if (options.mode) {
     mode.value = options.mode;
+    
+    // 动态设置导航栏标题
+    let title = '车型查询';
+    if (mode.value === 'dismantle') {
+      title = '拆解录入';
+    } else if (mode.value === 'dismantle_records') {
+      title = '拆解记录';
+    } else if (mode.value === 'valuation') {
+      title = '车辆估值';
+    }
+    
+    uni.setNavigationBarTitle({
+      title: title
+    });
   }
 });
 
