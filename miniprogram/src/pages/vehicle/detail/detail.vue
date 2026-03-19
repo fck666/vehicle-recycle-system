@@ -89,13 +89,14 @@
       <view class="series-loading" v-if="sameSeriesLoading">加载中...</view>
       <view class="series-empty" v-else-if="!sameSeries || !sameSeries.candidates || sameSeries.candidates.length === 0">暂无同车系候选</view>
       <view class="series-list" v-else>
-        <view class="series-item" v-for="item in sameSeries.candidates" :key="item.vehicleId">
+        <view class="series-item" v-for="item in sameSeries.candidates" :key="item.vehicleId" @click="goToDetail(item.vehicleId)">
           <view class="series-main">
             <text class="series-title">#{{ item.vehicleId }} {{ item.brand }} {{ item.model }}</text>
             <view class="series-tags">
               <text class="series-tag" :class="item.confidenceLevel === 'HIGH' ? 'high' : 'medium'">{{ item.confidenceLevel === 'HIGH' ? '高置信' : '中置信' }}</text>
               <text class="series-score">得分 {{ item.score }}</text>
               <text class="series-score">{{ item.modelYear }}款</text>
+              <text class="series-score" style="color:#07c160;">查看详情 ></text>
             </view>
           </view>
           <text class="series-reason">{{ item.matchReasons?.join('、') || '暂无匹配依据' }}</text>
@@ -262,6 +263,10 @@ const goToLogin = () => {
 
 const goToDismantle = () => {
   uni.navigateTo({ url: '/pages/dismantle/entry?vehicleId=' + vehicleId.value });
+};
+
+const goToDetail = (id) => {
+  uni.navigateTo({ url: `/pages/vehicle/detail/detail?id=${id}&mode=${mode.value || ''}` });
 };
 
 const previewImage = (index) => {

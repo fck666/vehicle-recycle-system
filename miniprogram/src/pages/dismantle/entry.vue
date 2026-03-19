@@ -5,6 +5,33 @@
       <view class="subtitle">{{ vehicle.brand }} {{ vehicle.model }}</view>
     </view>
 
+    <!-- 同车系候选拆解记录 -->
+    <view class="section" v-if="candidates && candidates.length > 0">
+      <view class="section-title" style="font-size:14px; font-weight:bold; margin: 15px 15px 5px 15px; color:#333;">同车系录入参考</view>
+      <scroll-view scroll-x class="candidate-scroll" style="white-space: nowrap; padding: 0 15px;">
+        <view class="candidate-card-mini" v-for="candidate in candidates" :key="candidate.vehicleId" @click="goToCandidate(candidate.vehicleId)" style="display:inline-block; width:260px; background:#fff; border-radius:8px; padding:12px; margin-right:10px; box-shadow:0 2px 8px rgba(0,0,0,0.04); vertical-align: top; white-space: normal;">
+          <view class="c-title" style="font-size:13px; font-weight:bold; color:#333; margin-bottom:4px; display:flex; justify-content:space-between;">
+            <text class="ellipsis">ID: {{ candidate.vehicleId }} {{ candidate.model }}</text>
+            <text style="color:#07c160; font-size:12px; flex-shrink:0; margin-left:8px;">查看/录入 ></text>
+          </view>
+          <view style="font-size:12px; color:#666; margin-bottom:8px;">{{ candidate.modelYear }}款 / {{ candidate.seriesName || '-' }}</view>
+          
+          <view v-if="candidate.dismantleRecords && candidate.dismantleRecords.length > 0" style="background:#f9f9f9; padding:6px; border-radius:4px; font-size:11px;">
+            <view style="color:#999; margin-bottom:2px;">最新录入: {{ candidate.dismantleRecords[0].createdAt }}</view>
+            <view style="color:#333; display:flex; flex-wrap:wrap; gap:4px;">
+              <text v-for="col in dynamicItems" :key="col.prop" v-show="candidate.dismantleRecords[0][col.type + 'Weight']">
+                {{ col.label }}: {{ candidate.dismantleRecords[0][col.type + 'Weight'] }}
+              </text>
+              <text v-show="candidate.dismantleRecords[0].otherWeight">其他: {{ candidate.dismantleRecords[0].otherWeight }}</text>
+            </view>
+          </view>
+          <view v-else style="font-size:11px; color:#999; text-align:center; padding:10px 0; background:#f9f9f9; border-radius:4px;">
+            暂无拆解记录
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
     <view class="form-card">
       <view class="mode-switch">
         <text class="label">录入模式</text>
@@ -62,6 +89,7 @@ const mode = ref('weight');
 const dynamicItems = ref([]);
 const formOther = ref('');
 const formRemark = ref('');
+const candidates = ref([]);
 
 // Mapping for standard types
 const typeLabelMap = {
@@ -77,7 +105,32 @@ onLoad((options) => {
   vehicleId.value = options.vehicleId;
   loadVehicle();
   loadRecycleTypes();
+  loadSameSeries();
 });
+
+const loadSameSeries = async () => {
+  try {
+    const res = await request({ url: '/vehicles/' + vehicleId.value + '/same-series' });
+    if (res && res.candidates) {
+      const highCandidates = res.candidates.filter(c => c.confidenceLevel === 'HIGH');
+      for (let i = 0; i < highCandidates.length; i++) {
+        const c = highCandidates[i];
+        try {
+          c.dismantleRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+        } catch (e) {
+          c.dismantleRecords = [];
+        }
+      }
+      candidates.value = highCandidates;
+    }
+  } catch (e) {
+    console.error('Failed to load same series', e);
+  }
+};
+
+const goToCandidate = (id) => {
+  uni.navigateTo({ url: `/pages/dismantle/entry?vehicleId=${id}` });
+};
 
 const loadVehicle = () => {
   request({ url: '/vehicles/' + vehicleId.value }).then(res => {
@@ -185,4 +238,5 @@ const handleSubmit = () => {
 
 .submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background-color: #fff; padding: 15px 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); z-index: 100; }
 .submit-btn { border-radius: 25px; font-size: 16px; height: 50px; line-height: 50px; background-color: #07c160; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
