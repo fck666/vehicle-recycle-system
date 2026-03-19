@@ -15,15 +15,15 @@
     <view class="list-section">
       <view class="list-item" v-if="isLoggedIn && !isStaff" @click="goToBind">
         <text class="list-text">绑定员工账号</text>
-        <text class="arrow">></text>
+        <text class="arrow">›</text>
       </view>
       <view class="list-item" @click="handleLogout" v-if="isLoggedIn">
         <text class="list-text">退出登录</text>
-        <text class="arrow">></text>
+        <text class="arrow">›</text>
       </view>
       <view class="list-item" @click="showAbout">
         <text class="list-text">关于系统</text>
-        <text class="arrow">></text>
+        <text class="arrow">›</text>
       </view>
     </view>
   </view>

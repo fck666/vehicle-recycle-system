@@ -141,7 +141,7 @@
     </view>
     
     <view class="login-tip" v-else @click="goToLogin">
-      登录后查看估值信息 >
+      登录后查看估值信息 ›
     </view>
 
     <!-- 底部按钮 -->
