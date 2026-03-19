@@ -41,9 +41,12 @@
       <view class="section" v-if="candidates && candidates.length > 0">
         <view class="section-title">高置信同车系候选 拆解记录</view>
         <view class="candidate-list">
-          <view class="candidate-card" v-for="candidate in candidates" :key="candidate.vehicleId">
+          <view class="candidate-card" v-for="candidate in candidates" :key="candidate.vehicleId" @click="goToDetail(candidate.vehicleId)">
             <view class="candidate-header">
-              <view class="c-title">ID: {{ candidate.vehicleId }} {{ candidate.brand }} {{ candidate.model }}</view>
+              <view class="c-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <text>ID: {{ candidate.vehicleId }} {{ candidate.brand }} {{ candidate.model }}</text>
+                <text style="color:#07c160; font-size:13px; font-weight:normal;">查看详情 ></text>
+              </view>
               <view class="c-subtitle">{{ candidate.modelYear }}款 / {{ candidate.seriesName || '-' }}</view>
               <view class="c-tags">
                 <text class="tag high">置信度: {{ candidate.score }}</text>
@@ -104,6 +107,10 @@ onLoad((options) => {
     initData();
   }
 });
+
+const goToDetail = (id) => {
+  uni.navigateTo({ url: `/pages/vehicle/detail/detail?id=${id}&mode=dismantle_records` });
+};
 
 const initData = async () => {
   loading.value = true;
