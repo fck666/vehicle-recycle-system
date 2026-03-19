@@ -96,10 +96,10 @@
               <text class="series-tag" :class="item.confidenceLevel === 'HIGH' ? 'high' : 'medium'">{{ item.confidenceLevel === 'HIGH' ? '高置信' : '中置信' }}</text>
               <text class="series-score">得分 {{ item.score }}</text>
               <text class="series-score">{{ item.modelYear }}款</text>
-              <text class="series-score" style="color:#07c160;">查看详情 ></text>
+              <text class="series-score" style="color:#07c160;">查看详情 ›</text>
             </view>
           </view>
-          <text class="series-reason">{{ item.matchReasons?.join('、') || '暂无匹配依据' }}</text>
+          <text class="series-reason">{{ item.matchReasons && item.matchReasons.length ? item.matchReasons.join('、') : '暂无匹配依据' }}</text>
         </view>
       </view>
     </view>

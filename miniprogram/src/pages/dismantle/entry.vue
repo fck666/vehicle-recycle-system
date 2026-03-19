@@ -12,7 +12,7 @@
         <view class="candidate-card-mini" v-for="candidate in candidates" :key="candidate.vehicleId" @click="goToCandidate(candidate.vehicleId)" style="display:inline-block; width:260px; background:#fff; border-radius:8px; padding:12px; margin-right:10px; box-shadow:0 2px 8px rgba(0,0,0,0.04); vertical-align: top; white-space: normal;">
           <view class="c-title" style="font-size:13px; font-weight:bold; color:#333; margin-bottom:4px; display:flex; justify-content:space-between;">
             <text class="ellipsis">ID: {{ candidate.vehicleId }} {{ candidate.model }}</text>
-            <text style="color:#07c160; font-size:12px; flex-shrink:0; margin-left:8px;">查看/录入 ></text>
+            <text style="color:#07c160; font-size:12px; flex-shrink:0; margin-left:8px;">查看/录入 ›</text>
           </view>
           <view style="font-size:12px; color:#666; margin-bottom:8px;">{{ candidate.modelYear }}款 / {{ candidate.seriesName || '-' }}</view>
           

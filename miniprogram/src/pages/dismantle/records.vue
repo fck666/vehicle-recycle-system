@@ -45,7 +45,7 @@
             <view class="candidate-header">
               <view class="c-title" style="display:flex; justify-content:space-between; align-items:center;">
                 <text>ID: {{ candidate.vehicleId }} {{ candidate.brand }} {{ candidate.model }}</text>
-                <text style="color:#07c160; font-size:13px; font-weight:normal;">查看详情 ></text>
+                <text style="color:#07c160; font-size:13px; font-weight:normal;">查看详情 ›</text>
               </view>
               <view class="c-subtitle">{{ candidate.modelYear }}款 / {{ candidate.seriesName || '-' }}</view>
               <view class="c-tags">
