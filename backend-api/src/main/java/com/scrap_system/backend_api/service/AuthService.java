@@ -70,6 +70,25 @@ public class AuthService {
     }
 
     @Transactional
+    public void updateUsername(Long userId, String newUsername) {
+        if (newUsername == null || newUsername.trim().isEmpty()) {
+            throw new IllegalArgumentException("username cannot be empty");
+        }
+        String normalizedUsername = newUsername.trim();
+        UserAccount u = userAccountRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("user not found"));
+        
+        // 检查用户名是否已存在（排除自己）
+        Optional<UserAccount> existing = userAccountRepository.findByUsername(normalizedUsername);
+        if (existing.isPresent() && !existing.get().getId().equals(userId)) {
+            throw new IllegalArgumentException("username already exists");
+        }
+        
+        u.setUsername(normalizedUsername);
+        userAccountRepository.save(u);
+    }
+
+    @Transactional
     public AuthLoginResponse wxLogin(String code, String openid, String unionid, String clientType) {
         String wxOpenid = normalize(openid);
         String wxUnionid = normalize(unionid);
@@ -100,10 +119,18 @@ public class AuthService {
                     nu.setWxOpenid(finalWxOpenid);
                     nu.setWxUnionid(finalWxUnionid);
                     nu.setStatus("ACTIVE");
+                    // 新增：使用 openid 后 6 位作为默认用户名，方便后台区分
+                    String suffix = finalWxOpenid.length() > 6 ? finalWxOpenid.substring(finalWxOpenid.length() - 6) : finalWxOpenid;
+                    nu.setUsername("wx_" + suffix);
                     return userAccountRepository.save(nu);
                 });
         if (u.getWxOpenid() == null && wxOpenid != null) u.setWxOpenid(wxOpenid);
         if (u.getWxUnionid() == null && wxUnionid != null) u.setWxUnionid(wxUnionid);
+        // 如果之前注册时没有生成用户名，在这里补上
+        if (u.getUsername() == null || u.getUsername().trim().isEmpty()) {
+            String suffix = wxOpenid.length() > 6 ? wxOpenid.substring(wxOpenid.length() - 6) : wxOpenid;
+            u.setUsername("wx_" + suffix);
+        }
         userAccountRepository.save(u);
 
         if (!"ACTIVE".equalsIgnoreCase(u.getStatus())) {

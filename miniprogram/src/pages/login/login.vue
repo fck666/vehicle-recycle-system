@@ -50,6 +50,7 @@ const handleLogin = () => {
         uni.setStorageSync('token', res.token);
         uni.setStorageSync('userId', res.userId);
         uni.setStorageSync('roles', res.roles);
+        uni.setStorageSync('username', res.username); // 缓存用户名
         
         uni.showToast({ title: '登录成功' });
         

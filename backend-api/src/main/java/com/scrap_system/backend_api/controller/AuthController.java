@@ -6,6 +6,7 @@ import com.scrap_system.backend_api.dto.AuthLoginResponse;
 import com.scrap_system.backend_api.dto.AuthMeResponse;
 import com.scrap_system.backend_api.dto.AuthPhoneLoginRequest;
 import com.scrap_system.backend_api.dto.AuthWxLoginRequest;
+import com.scrap_system.backend_api.dto.UpdateUsernameRequest;
 import com.scrap_system.backend_api.security.JwtTokenService;
 import com.scrap_system.backend_api.service.AuthService;
 import com.scrap_system.backend_api.service.SessionService;
@@ -42,6 +43,23 @@ public class AuthController {
         }
         Long userId = (Long) authentication.getPrincipal();
         return ResponseEntity.ok(authService.me(userId));
+    }
+
+    @PutMapping("/me/username")
+    public ResponseEntity<Void> updateUsername(@RequestBody UpdateUsernameRequest request, Authentication authentication) {
+        if (authentication == null || authentication.getPrincipal() == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (request == null || request.getUsername() == null || request.getUsername().trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Long userId = (Long) authentication.getPrincipal();
+        try {
+            authService.updateUsername(userId, request.getUsername());
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @PostMapping("/logout")
