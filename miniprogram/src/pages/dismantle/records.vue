@@ -29,6 +29,10 @@
                 <text class="m-value">{{ item.otherWeight || 0 }} kg</text>
               </view>
             </view>
+            <view class="record-remark" v-if="getFixedPriceText(item)">
+              <text class="r-label">固定总价: </text>
+              <text class="r-text">{{ getFixedPriceText(item) }}</text>
+            </view>
             <view class="record-remark" v-if="item.remark">
               <text class="r-label">备注: </text>
               <text class="r-text">{{ item.remark }}</text>
@@ -70,6 +74,10 @@
                       <text class="m-value">{{ item.otherWeight || 0 }}</text>
                     </view>
                   </view>
+                  <view class="record-remark" v-if="getFixedPriceText(item)">
+                    <text class="r-label">固定总价: </text>
+                    <text class="r-text">{{ getFixedPriceText(item) }}</text>
+                  </view>
                 </view>
               </view>
             </view>
@@ -99,6 +107,35 @@ const typeLabelMap = {
   'battery': '电池',
   'plastic': '塑料',
   'rubber': '橡胶'
+};
+
+const parseDetails = (detailsJson) => {
+  if (!detailsJson) return [];
+  try {
+    const parsed = JSON.parse(detailsJson);
+    const items = Array.isArray(parsed) ? parsed : parsed.items;
+    return Array.isArray(items) ? items : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const getFixedPriceText = (record) => {
+  const details = parseDetails(record.detailsJson);
+  return details
+    .filter(d => d.pricingMode === 'FIXED_TOTAL' && Number(d.totalPrice) > 0)
+    .map(d => `${typeLabelMap[d.materialType] || d.materialType}:${Number(d.totalPrice).toFixed(2)}元`)
+    .join('，');
+};
+
+const hydrateRecordWeights = (record) => {
+  const details = parseDetails(record.detailsJson);
+  details
+    .filter(d => d.pricingMode === 'WEIGHT' && Number(d.weightKg) > 0)
+    .forEach(d => {
+      record[d.materialType + 'Weight'] = Number(d.weightKg);
+    });
+  return record;
 };
 
 onLoad((options) => {
@@ -132,7 +169,8 @@ const initData = async () => {
     }
     
     // 3. 加载当前车辆拆解记录
-    records.value = await request({ url: '/admin/vehicle-dismantle/vehicle/' + vehicleId.value }) || [];
+    const ownRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + vehicleId.value }) || [];
+    records.value = ownRecords.map(hydrateRecordWeights);
     
     // 4. 加载同车系并筛选高置信
     const sameSeriesRes = await request({ url: '/vehicles/' + vehicleId.value + '/same-series' });
@@ -142,7 +180,8 @@ const initData = async () => {
       for (let i = 0; i < highCandidates.length; i++) {
         const c = highCandidates[i];
         try {
-          c.dismantleRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+          const candidateRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+          c.dismantleRecords = candidateRecords.map(hydrateRecordWeights);
         } catch (e) {
           c.dismantleRecords = [];
         }

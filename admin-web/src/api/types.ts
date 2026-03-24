@@ -61,6 +61,14 @@ export interface VehicleDismantleRecord {
   createdAt?: string | null
 }
 
+export interface DismantleDetailItem {
+  materialType: string
+  pricingMode: 'WEIGHT' | 'FIXED_TOTAL'
+  weightKg?: number | null
+  ratio?: number | null
+  totalPrice?: number | null
+}
+
 export interface VehicleUpsertRequest {
   brand?: string
   model?: string
@@ -126,7 +134,9 @@ export interface MaterialTemplate {
 
 export interface MaterialRatioItem {
   materialType: string
-  ratio: number
+  ratio?: number | null
+  pricingMode?: 'WEIGHT' | 'FIXED_TOTAL'
+  fixedTotalPrice?: number | null
 }
 
 export interface MaterialSourceConfig {

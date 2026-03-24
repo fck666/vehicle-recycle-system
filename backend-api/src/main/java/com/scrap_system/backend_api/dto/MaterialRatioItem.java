@@ -8,4 +8,6 @@ import java.math.BigDecimal;
 public class MaterialRatioItem {
     private String materialType;
     private BigDecimal ratio;
+    private String pricingMode;
+    private BigDecimal fixedTotalPrice;
 }

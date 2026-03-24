@@ -5,8 +5,10 @@ import com.scrap_system.backend_api.dto.MaterialRatioItem;
 import com.scrap_system.backend_api.dto.MaterialTemplateDto;
 import com.scrap_system.backend_api.model.MaterialTemplate;
 import com.scrap_system.backend_api.model.MaterialTemplateItem;
+import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.MaterialTemplateItemRepository;
 import com.scrap_system.backend_api.repository.MaterialTemplateRepository;
+import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,9 +32,12 @@ public class MaterialTemplateController {
     private static final String OTHERS = "others";
     private static final String SCOPE_VEHICLE_TYPE = "VEHICLE_TYPE";
     private static final String SCOPE_VEHICLE = "VEHICLE";
+    private static final String PRICING_MODE_WEIGHT = "WEIGHT";
+    private static final String PRICING_MODE_FIXED_TOTAL = "FIXED_TOTAL";
 
     private final MaterialTemplateRepository materialTemplateRepository;
     private final MaterialTemplateItemRepository materialTemplateItemRepository;
+    private final VehicleModelRepository vehicleModelRepository;
 
     @GetMapping
     public List<MaterialTemplateDto> list() {
@@ -55,6 +60,30 @@ public class MaterialTemplateController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/vehicle/{vehicleId}/materials")
+    public ResponseEntity<List<MaterialRatioItem>> getMaterialsByVehicle(@PathVariable Long vehicleId) {
+        VehicleModel vehicle = vehicleModelRepository.findById(vehicleId).orElse(null);
+        if (vehicle == null) {
+            return ResponseEntity.notFound().build();
+        }
+        MaterialTemplate template = materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE, String.valueOf(vehicleId))
+                .or(() -> materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE_TYPE, vehicle.getVehicleType()))
+                .or(() -> materialTemplateRepository.findByVehicleType(vehicle.getVehicleType()))
+                .orElse(null);
+        if (template == null) {
+            return ResponseEntity.ok(List.of());
+        }
+        List<MaterialTemplateItem> items = materialTemplateItemRepository.findByTemplateIdOrderByIdAsc(template.getId());
+        return ResponseEntity.ok(items.stream().sorted(Comparator.comparing(MaterialTemplateItem::getMaterialType)).map(i -> {
+            MaterialRatioItem r = new MaterialRatioItem();
+            r.setMaterialType(i.getMaterialType());
+            r.setRatio(i.getRatio());
+            r.setPricingMode(normalizePricingMode(i.getPricingMode()));
+            r.setFixedTotalPrice(i.getFixedTotalPrice());
+            return r;
+        }).toList());
+    }
+
     @PostMapping
     @Transactional
     public ResponseEntity<MaterialTemplateDto> upsert(@RequestBody MaterialTemplateUpsertRequest request) {
@@ -67,9 +96,11 @@ public class MaterialTemplateController {
         List<MaterialRatioItem> normalizedItems = applyOthersRule(normalize(request.getMaterials()));
         if (normalizedItems.isEmpty()) return ResponseEntity.badRequest().build();
         BigDecimal sum = normalizedItems.stream()
+                .filter(i -> PRICING_MODE_WEIGHT.equals(normalizePricingMode(i.getPricingMode())))
                 .map(MaterialRatioItem::getRatio)
+                .filter(r -> r != null && r.compareTo(BigDecimal.ZERO) > 0)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (sum.compareTo(BigDecimal.ZERO) <= 0 || sum.compareTo(BigDecimal.ONE) > 0) {
+        if (sum.compareTo(BigDecimal.ONE) > 0) {
             return ResponseEntity.badRequest().build();
         }
         String scopeType = normalizeScopeType(request.getScopeType());
@@ -94,6 +125,8 @@ public class MaterialTemplateController {
             tItem.setTemplateId(saved.getId());
             tItem.setMaterialType(item.getMaterialType());
             tItem.setRatio(item.getRatio());
+            tItem.setPricingMode(normalizePricingMode(item.getPricingMode()));
+            tItem.setFixedTotalPrice(item.getFixedTotalPrice());
             toSave.add(tItem);
         }
         materialTemplateItemRepository.saveAll(toSave);
@@ -128,18 +161,43 @@ public class MaterialTemplateController {
 
     private static List<MaterialRatioItem> normalize(List<MaterialRatioItem> materials) {
         Map<String, BigDecimal> merged = new HashMap<>();
+        Map<String, String> pricingModes = new HashMap<>();
+        Map<String, BigDecimal> fixedTotals = new HashMap<>();
         for (MaterialRatioItem item : materials) {
-            if (item == null || isBlank(item.getMaterialType()) || item.getRatio() == null || item.getRatio().compareTo(BigDecimal.ZERO) < 0) {
+            if (item == null || isBlank(item.getMaterialType())) {
                 continue;
             }
             String type = normalizeType(item.getMaterialType());
-            merged.put(type, item.getRatio());
+            String pricingMode = normalizePricingMode(item.getPricingMode());
+            if (PRICING_MODE_FIXED_TOTAL.equals(pricingMode)) {
+                if (item.getFixedTotalPrice() == null || item.getFixedTotalPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                fixedTotals.put(type, item.getFixedTotalPrice().setScale(2, RoundingMode.HALF_UP));
+                merged.put(type, null);
+                pricingModes.put(type, PRICING_MODE_FIXED_TOTAL);
+            } else {
+                if (item.getRatio() == null || item.getRatio().compareTo(BigDecimal.ZERO) < 0) {
+                    continue;
+                }
+                merged.put(type, item.getRatio());
+                pricingModes.put(type, PRICING_MODE_WEIGHT);
+                fixedTotals.remove(type);
+            }
         }
         return merged.entrySet().stream()
                 .map(e -> {
                     MaterialRatioItem i = new MaterialRatioItem();
                     i.setMaterialType(e.getKey());
-                    i.setRatio(e.getValue().setScale(4, RoundingMode.HALF_UP));
+                    String pricingMode = pricingModes.getOrDefault(e.getKey(), PRICING_MODE_WEIGHT);
+                    i.setPricingMode(pricingMode);
+                    if (PRICING_MODE_FIXED_TOTAL.equals(pricingMode)) {
+                        i.setRatio(null);
+                        i.setFixedTotalPrice(fixedTotals.get(e.getKey()));
+                    } else {
+                        i.setRatio(e.getValue() == null ? null : e.getValue().setScale(4, RoundingMode.HALF_UP));
+                        i.setFixedTotalPrice(null);
+                    }
                     return i;
                 })
                 .sorted(Comparator.comparing(MaterialRatioItem::getMaterialType))
@@ -149,19 +207,25 @@ public class MaterialTemplateController {
     private static List<MaterialRatioItem> applyOthersRule(List<MaterialRatioItem> items) {
         if (items.isEmpty()) return items;
         BigDecimal nonOthersSum = items.stream()
+                .filter(i -> PRICING_MODE_WEIGHT.equals(normalizePricingMode(i.getPricingMode())))
                 .filter(i -> !OTHERS.equals(i.getMaterialType()))
                 .map(MaterialRatioItem::getRatio)
+                .filter(r -> r != null && r.compareTo(BigDecimal.ZERO) > 0)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         if (nonOthersSum.compareTo(BigDecimal.ONE) > 0) return List.of();
-        boolean hasOthers = items.stream().anyMatch(i -> OTHERS.equals(i.getMaterialType()));
+        boolean hasOthers = items.stream().anyMatch(i ->
+                OTHERS.equals(i.getMaterialType()) && PRICING_MODE_WEIGHT.equals(normalizePricingMode(i.getPricingMode())));
         if (!hasOthers) return items;
         BigDecimal othersRatio = BigDecimal.ONE.subtract(nonOthersSum).setScale(4, RoundingMode.HALF_UP);
         List<MaterialRatioItem> adjusted = new ArrayList<>();
-        adjusted.addAll(items.stream().filter(i -> !OTHERS.equals(i.getMaterialType())).toList());
+        adjusted.addAll(items.stream()
+                .filter(i -> !OTHERS.equals(i.getMaterialType()) || !PRICING_MODE_WEIGHT.equals(normalizePricingMode(i.getPricingMode())))
+                .toList());
         if (othersRatio.compareTo(BigDecimal.ZERO) > 0) {
             MaterialRatioItem o = new MaterialRatioItem();
             o.setMaterialType(OTHERS);
             o.setRatio(othersRatio);
+            o.setPricingMode(PRICING_MODE_WEIGHT);
             adjusted.add(o);
         }
         return adjusted.stream().sorted(Comparator.comparing(MaterialRatioItem::getMaterialType)).toList();
@@ -182,6 +246,13 @@ public class MaterialTemplateController {
         return SCOPE_VEHICLE_TYPE;
     }
 
+    private static String normalizePricingMode(String raw) {
+        if (isBlank(raw)) return PRICING_MODE_WEIGHT;
+        String mode = raw.trim().toUpperCase(Locale.ROOT);
+        if (PRICING_MODE_FIXED_TOTAL.equals(mode)) return PRICING_MODE_FIXED_TOTAL;
+        return PRICING_MODE_WEIGHT;
+    }
+
     private static String normalizeScopeValue(String scopeType, MaterialTemplateUpsertRequest request) {
         String raw = request.getScopeValue();
         if (isBlank(raw)) raw = request.getVehicleType();
@@ -193,7 +264,7 @@ public class MaterialTemplateController {
 
     private static BigDecimal findRatio(List<MaterialRatioItem> items, String type) {
         return items.stream()
-                .filter(i -> type.equals(i.getMaterialType()))
+                .filter(i -> type.equals(i.getMaterialType()) && PRICING_MODE_WEIGHT.equals(normalizePricingMode(i.getPricingMode())))
                 .findFirst()
                 .map(MaterialRatioItem::getRatio)
                 .orElse(BigDecimal.ZERO);
@@ -213,6 +284,8 @@ public class MaterialTemplateController {
                     MaterialRatioItem r = new MaterialRatioItem();
                     r.setMaterialType(i.getMaterialType());
                     r.setRatio(i.getRatio());
+                    r.setPricingMode(normalizePricingMode(i.getPricingMode()));
+                    r.setFixedTotalPrice(i.getFixedTotalPrice());
                     return r;
                 })
                 .toList();

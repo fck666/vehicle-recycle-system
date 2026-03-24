@@ -46,7 +46,7 @@ public class AuthController {
     }
 
     @PutMapping("/me/username")
-    public ResponseEntity<Void> updateUsername(@RequestBody UpdateUsernameRequest request, Authentication authentication) {
+    public ResponseEntity<?> updateUsername(@RequestBody UpdateUsernameRequest request, Authentication authentication) {
         if (authentication == null || authentication.getPrincipal() == null) {
             return ResponseEntity.status(401).build();
         }
@@ -58,7 +58,7 @@ public class AuthController {
             authService.updateUsername(userId, request.getUsername());
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", e.getMessage()));
         }
     }
 
@@ -95,7 +95,7 @@ public class AuthController {
     }
 
     @PostMapping("/wx/bind")
-    public ResponseEntity<Void> wxBind(@RequestBody AuthBindRequest request, Authentication authentication) {
+    public ResponseEntity<?> wxBind(@RequestBody AuthBindRequest request, Authentication authentication) {
         if (request == null || authentication == null || authentication.getPrincipal() == null) {
             return ResponseEntity.badRequest().build();
         }
@@ -104,7 +104,7 @@ public class AuthController {
             authService.bindStaff(userId, request.getUsername(), request.getPassword());
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", e.getMessage()));
         }
     }
 

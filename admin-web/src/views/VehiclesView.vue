@@ -6,8 +6,8 @@ import type { Page, SameSeriesResponse, VehicleDocument, VehicleImage, VehicleMo
 import { createVehicle, deleteVehicle, getSameSeriesVehicles, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
 import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage, getHtmlContent, getSignedUrl } from '../api/vehicleMedia'
 import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
-import { listRecycleMaterialTypes } from '../api/material'
-import type { VehicleDismantleRecord } from '../api/types'
+import { getVehicleTemplateMaterials, listRecycleMaterialTypes } from '../api/material'
+import type { DismantleDetailItem, MaterialRatioItem, VehicleDismantleRecord } from '../api/types'
 
 const q = ref('')
 const loading = ref(false)
@@ -91,6 +91,7 @@ const currentDismantleCurbWeight = ref<number | null>(null)
 const dismantleFormVisible = ref(false)
 const dismantleMode = ref<'weight' | 'ratio'>('weight')
 const recycleMaterialTypes = ref<string[]>([])
+const dismantleFixedItems = ref<{ type: string; label: string; totalPrice: number }[]>([])
 
 // Mapping for standard types
 const typeLabelMap: Record<string, string> = {
@@ -113,6 +114,25 @@ const dynamicDismantleColumns = computed(() => {
     label: typeLabelMap[t] || t
   }))
 })
+
+function parseDismantleDetails(detailsJson?: string | null): DismantleDetailItem[] {
+  if (!detailsJson) return []
+  try {
+    const parsed = JSON.parse(detailsJson)
+    const items = Array.isArray(parsed) ? parsed : parsed?.items
+    if (!Array.isArray(items)) return []
+    return items.filter((x: any) => x && typeof x.materialType === 'string')
+  } catch {
+    return []
+  }
+}
+
+function getFixedPriceText(record: VehicleDismantleRecord) {
+  const items = parseDismantleDetails(record.detailsJson)
+    .filter(x => x.pricingMode === 'FIXED_TOTAL' && (x.totalPrice || 0) > 0)
+    .map(x => `${typeLabelMap[x.materialType] || x.materialType}:${Number(x.totalPrice || 0).toFixed(2)}元`)
+  return items.join('，')
+}
 
 // Use a map to store dynamic values. Standard keys map to fixed fields, others to detailsJson if backend supported.
 // But current backend only supports fixed fields + otherWeight + detailsJson?
@@ -517,11 +537,17 @@ async function loadDismantleRecords(vehicleId: number) {
       recycleMaterialTypes.value = []
     }
 
-    const [records, vehicle] = await Promise.all([
-      getDismantleRecords(vehicleId),
-      getVehicle(vehicleId)
-    ])
-    dismantleRecords.value = records
+    const [records, vehicle] = await Promise.all([getDismantleRecords(vehicleId), getVehicle(vehicleId)])
+    dismantleRecords.value = records.map(record => {
+      const details = parseDismantleDetails(record.detailsJson)
+      const detailWeightEntries = details
+        .filter(x => x.pricingMode === 'WEIGHT' && (x.weightKg || 0) > 0)
+        .map(x => [`${x.materialType}Weight`, Number(x.weightKg || 0)] as const)
+      return {
+        ...record,
+        ...Object.fromEntries(detailWeightEntries),
+      }
+    })
     currentDismantleCurbWeight.value = vehicle.curbWeight ?? null
   } catch (e) {
     ElMessage.error('加载拆解记录失败')
@@ -537,29 +563,36 @@ function openDismantle(row: VehicleModel) {
 }
 
 async function openDismantleForm() {
+  let templateMaterials: MaterialRatioItem[] = []
   try {
-    const types = await listRecycleMaterialTypes()
+    const [types, materials] = await Promise.all([
+      listRecycleMaterialTypes(),
+      currentDismantleVehicleId.value ? getVehicleTemplateMaterials(currentDismantleVehicleId.value) : Promise.resolve([]),
+    ])
     recycleMaterialTypes.value = types && types.length > 0 ? types : []
+    templateMaterials = materials || []
   } catch {
     recycleMaterialTypes.value = []
+    templateMaterials = []
   }
 
-  const mapping: Record<string, string> = {
-    'steel': '钢',
-    'aluminum': '铝',
-    'copper': '铜',
-    'battery': '电池',
-    'plastic': '塑料',
-    'rubber': '橡胶'
-  }
-  
-  dismantleFormItems.value = recycleMaterialTypes.value.map(t => ({
+  const weightTypesFromTemplate = templateMaterials
+    .filter(x => (x.pricingMode || 'WEIGHT') === 'WEIGHT')
+    .map(x => x.materialType)
+    .filter(t => t && t !== 'others')
+  const fixedTypes = templateMaterials.filter(x => (x.pricingMode || 'WEIGHT') === 'FIXED_TOTAL')
+  const weightTypes = weightTypesFromTemplate.length > 0 ? weightTypesFromTemplate : recycleMaterialTypes.value
+  dismantleFormItems.value = weightTypes.map(t => ({
     type: t,
-    label: mapping[t] || t,
+    label: typeLabelMap[t] || t,
     weight: 0,
     ratio: 0
   }))
-  
+  dismantleFixedItems.value = fixedTypes.map(x => ({
+    type: x.materialType,
+    label: typeLabelMap[x.materialType] || x.materialType,
+    totalPrice: 0,
+  }))
   dismantleFormOther.value = 0
   dismantleFormRemark.value = ''
   dismantleMode.value = 'weight'
@@ -570,6 +603,7 @@ async function submitDismantle() {
   if (!currentDismantleVehicleId.value) return
   
   let steel = 0, aluminum = 0, copper = 0, battery = 0
+  const details: DismantleDetailItem[] = []
   
   dismantleFormItems.value.forEach(item => {
     let w = item.weight
@@ -581,6 +615,23 @@ async function submitDismantle() {
     else if (item.type === 'aluminum') aluminum = w
     else if (item.type === 'copper') copper = w
     else if (item.type === 'battery') battery = w
+    else if (w > 0) {
+      details.push({
+        materialType: item.type,
+        pricingMode: 'WEIGHT',
+        weightKg: w,
+        ratio: dismantleMode.value === 'ratio' ? item.ratio : null,
+      })
+    }
+  })
+  dismantleFixedItems.value.forEach(item => {
+    if (item.totalPrice > 0) {
+      details.push({
+        materialType: item.type,
+        pricingMode: 'FIXED_TOTAL',
+        totalPrice: item.totalPrice,
+      })
+    }
   })
   
   try {
@@ -591,6 +642,7 @@ async function submitDismantle() {
       copperWeight: copper,
       batteryWeight: battery,
       otherWeight: dismantleFormOther.value,
+      detailsJson: JSON.stringify({ items: details }),
       remark: dismantleFormRemark.value
     } as any)
     ElMessage.success('已保存')
@@ -995,6 +1047,11 @@ loadFacets()
       />
       
       <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
+      <el-table-column label="固定总价明细" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ getFixedPriceText(row) || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
       <el-table-column label="操作" width="100" fixed="right">
         <template #default="{ row }">
@@ -1026,11 +1083,17 @@ loadFacets()
             <template v-else>
               <el-input-number v-model="item.ratio" :min="0" :max="100" :precision="2" style="flex:1;" :disabled="!currentDismantleCurbWeight" />
               <span style="width:30px;">%</span>
-              <span v-if="currentDismantleCurbWeight" style="color:var(--el-text-color-secondary;font-size:12px;width:80px;text-align:right;">
+              <span v-if="currentDismantleCurbWeight" style="color:var(--el-text-color-secondary);font-size:12px;width:80px;text-align:right;">
                 ≈ {{ ((item.ratio / 100) * currentDismantleCurbWeight).toFixed(1) }} kg
               </span>
             </template>
           </div>
+        </el-form-item>
+      </div>
+
+      <div v-for="item in dismantleFixedItems" :key="`fixed-${item.type}`">
+        <el-form-item :label="`${item.label}(元)`">
+          <el-input-number v-model="item.totalPrice" :min="0" :precision="2" :step="10" style="width:100%" />
         </el-form-item>
       </div>
 

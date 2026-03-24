@@ -61,6 +61,13 @@
         </view>
       </view>
 
+      <view v-for="(item, index) in fixedItems" :key="'fixed-' + index" class="form-item">
+        <text class="label">{{ item.label }} (元)</text>
+        <view class="input-wrapper">
+          <input class="input" type="digit" v-model="item.totalPrice" placeholder="输入总价" />
+        </view>
+      </view>
+
       <view class="form-item">
         <text class="label">其他材料 (kg)</text>
         <input class="input" type="digit" v-model="formOther" placeholder="请输入重量" />
@@ -87,9 +94,31 @@ const vehicleId = ref(null);
 const vehicle = ref({});
 const mode = ref('weight');
 const dynamicItems = ref([]);
+const fixedItems = ref([]);
 const formOther = ref('');
 const formRemark = ref('');
 const candidates = ref([]);
+
+const parseDetails = (detailsJson) => {
+  if (!detailsJson) return [];
+  try {
+    const parsed = JSON.parse(detailsJson);
+    const items = Array.isArray(parsed) ? parsed : parsed.items;
+    return Array.isArray(items) ? items : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const hydrateRecordWeights = (record) => {
+  const details = parseDetails(record.detailsJson);
+  details
+    .filter(d => d.pricingMode === 'WEIGHT' && Number(d.weightKg) > 0)
+    .forEach(d => {
+      record[d.materialType + 'Weight'] = Number(d.weightKg);
+    });
+  return record;
+};
 
 // Mapping for standard types
 const typeLabelMap = {
@@ -116,7 +145,8 @@ const loadSameSeries = async () => {
       for (let i = 0; i < highCandidates.length; i++) {
         const c = highCandidates[i];
         try {
-          c.dismantleRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+          const records = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+          c.dismantleRecords = records.map(hydrateRecordWeights);
         } catch (e) {
           c.dismantleRecords = [];
         }
@@ -139,33 +169,41 @@ const loadVehicle = () => {
 };
 
 const loadRecycleTypes = () => {
-  // Use the public endpoint if available or admin one if user has role. 
-  // Miniprogram users are usually operators.
-  // Assuming we can access /api/recycle-prices/types (need to expose public or ensure auth)
-  // We added /api/admin/recycle-prices/types for admin/operator.
-  // Let's try to use that. Miniprogram request util handles auth token.
-  request({ url: '/admin/recycle-prices/types' }).then(res => {
-    const types = res || [];
-    if (types.length === 0) {
-      // If no types configured, maybe show nothing or standard ones?
-      // User said: "If no materials enabled... should only see Other".
-      dynamicItems.value = [];
-    } else {
-      dynamicItems.value = types.map(t => ({
-        type: t,
-        label: typeLabelMap[t] || t,
-        value: ''
+  Promise.all([
+    request({ url: '/admin/recycle-prices/types' }).catch(() => []),
+    request({ url: '/material-templates/vehicle/' + vehicleId.value + '/materials' }).catch(() => [])
+  ]).then(([typesRes, materialsRes]) => {
+    const types = typesRes || [];
+    const templateMaterials = materialsRes || [];
+    const weightTypesFromTemplate = templateMaterials
+      .filter(m => (m.pricingMode || 'WEIGHT') === 'WEIGHT')
+      .map(m => m.materialType)
+      .filter(t => t && t !== 'others');
+    const weightTypes = weightTypesFromTemplate.length > 0 ? weightTypesFromTemplate : types;
+    dynamicItems.value = weightTypes.map(t => ({
+      type: t,
+      label: typeLabelMap[t] || t,
+      value: ''
+    }));
+    fixedItems.value = templateMaterials
+      .filter(m => (m.pricingMode || 'WEIGHT') === 'FIXED_TOTAL')
+      .map(m => ({
+        type: m.materialType,
+        label: typeLabelMap[m.materialType] || m.materialType,
+        totalPrice: ''
       }));
-    }
   }).catch(() => {
-    // Fallback or empty
     dynamicItems.value = [];
+    fixedItems.value = [];
   });
 };
 
 const handleSubmit = () => {
   // Check if at least one input has value
-  const hasValue = dynamicItems.value.some(item => Number(item.value) > 0) || Number(formOther.value) > 0;
+  const hasValue =
+    dynamicItems.value.some(item => Number(item.value) > 0) ||
+    fixedItems.value.some(item => Number(item.totalPrice) > 0) ||
+    Number(formOther.value) > 0;
   
   if (!hasValue) {
     uni.showToast({ title: '请至少输入一项数值', icon: 'none' });
@@ -175,6 +213,7 @@ const handleSubmit = () => {
   uni.showLoading({ title: '提交中...' });
   
   let steel = 0, aluminum = 0, copper = 0, battery = 0;
+  const detailItems = [];
   
   dynamicItems.value.forEach(item => {
     let val = Number(item.value) || 0;
@@ -186,7 +225,24 @@ const handleSubmit = () => {
     else if (item.type === 'aluminum') aluminum = val;
     else if (item.type === 'copper') copper = val;
     else if (item.type === 'battery') battery = val;
-    // others ignored for fixed fields, need backend support for dynamic
+    else if (val > 0) {
+      detailItems.push({
+        materialType: item.type,
+        pricingMode: 'WEIGHT',
+        weightKg: val,
+        ratio: mode.value === 'ratio' ? Number(item.value) || 0 : null
+      });
+    }
+  });
+  fixedItems.value.forEach(item => {
+    const totalPrice = Number(item.totalPrice) || 0;
+    if (totalPrice > 0) {
+      detailItems.push({
+        materialType: item.type,
+        pricingMode: 'FIXED_TOTAL',
+        totalPrice
+      });
+    }
   });
 
   const data = {
@@ -196,6 +252,7 @@ const handleSubmit = () => {
     copperWeight: copper,
     batteryWeight: battery,
     otherWeight: Number(formOther.value) || 0,
+    detailsJson: JSON.stringify({ items: detailItems }),
     remark: formRemark.value
   };
 

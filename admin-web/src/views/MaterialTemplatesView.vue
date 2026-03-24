@@ -7,6 +7,8 @@ import { deleteMaterialTemplateById, listMaterialPrices, listMaterialSources, li
 import { getVehicleFacets, searchVehicles } from '../api/vehicles'
 
 const OTHERS = 'others'
+const PRICING_MODE_WEIGHT = 'WEIGHT' as const
+const PRICING_MODE_FIXED_TOTAL = 'FIXED_TOTAL' as const
 
 const loading = ref(false)
 const items = ref<MaterialTemplate[]>([])
@@ -65,49 +67,74 @@ function openCreate() {
 function openEdit(row: MaterialTemplate) {
   form.scopeType = row.scopeType ?? 'VEHICLE_TYPE'
   form.scopeValue = row.scopeValue ?? row.vehicleType ?? ''
-  form.materials = (row.materials || []).map(m => ({ materialType: m.materialType, ratio: m.ratio }))
+  form.materials = (row.materials || []).map(m => ({
+    materialType: m.materialType,
+    ratio: m.ratio ?? 0,
+    pricingMode: m.pricingMode || PRICING_MODE_WEIGHT,
+    fixedTotalPrice: m.fixedTotalPrice ?? null,
+  }))
   form.recoveryRatio = row.recoveryRatio
   form.othersPricePerKgOverride = row.othersPricePerKgOverride ?? null
   dialogVisible.value = true
 }
 
 function addMaterial() {
-  form.materials.push({ materialType: '', ratio: 0 })
+  form.materials.push({ materialType: '', ratio: 0, pricingMode: PRICING_MODE_WEIGHT, fixedTotalPrice: null })
 }
 
 function removeMaterial(index: number) {
   form.materials.splice(index, 1)
 }
 
-const ratioSum = computed(() => form.materials.reduce((sum, it) => sum + (it.ratio || 0), 0))
+const ratioSum = computed(() =>
+  form.materials
+    .filter(m => (m.pricingMode || PRICING_MODE_WEIGHT) === PRICING_MODE_WEIGHT)
+    .reduce((sum, it) => sum + (it.ratio || 0), 0),
+)
 const ratioWithoutOthers = computed(() =>
   form.materials
+    .filter(m => (m.pricingMode || PRICING_MODE_WEIGHT) === PRICING_MODE_WEIGHT)
     .filter(m => m.materialType.trim().toLowerCase() !== OTHERS)
     .reduce((sum, it) => sum + (it.ratio || 0), 0),
 )
-const hasOthers = computed(() => form.materials.some(m => m.materialType.trim().toLowerCase() === OTHERS))
+const hasOthers = computed(() =>
+  form.materials.some(m => m.materialType.trim().toLowerCase() === OTHERS && (m.pricingMode || PRICING_MODE_WEIGHT) === PRICING_MODE_WEIGHT),
+)
 const othersRatio = computed(() => Math.max(0, Number((1 - ratioWithoutOthers.value).toFixed(4))))
 
 async function submit() {
   const normalized = form.materials
-    .filter(m => m.materialType.trim() && m.ratio != null && m.ratio >= 0)
-    .map(m => ({ materialType: m.materialType.trim().toLowerCase(), ratio: m.ratio }))
-  const dedup = new Map<string, number>()
-  normalized.forEach(m => dedup.set(m.materialType, m.ratio))
-  const materialPayload = [...dedup.entries()].map(([materialType, ratio]) => ({ materialType, ratio }))
-  const withoutOthers = materialPayload.filter(x => x.materialType !== OTHERS)
-  const sumWithoutOthers = withoutOthers.reduce((acc, x) => acc + x.ratio, 0)
+    .filter(m => m.materialType.trim())
+    .map(m => ({
+      materialType: m.materialType.trim().toLowerCase(),
+      pricingMode: m.pricingMode || PRICING_MODE_WEIGHT,
+      ratio: m.ratio,
+      fixedTotalPrice: m.fixedTotalPrice,
+    }))
+    .filter(m => {
+      if (m.pricingMode === PRICING_MODE_FIXED_TOTAL) {
+        return m.fixedTotalPrice != null && m.fixedTotalPrice > 0
+      }
+      return m.ratio != null && m.ratio >= 0
+    })
+  const dedup = new Map<string, typeof normalized[number]>()
+  normalized.forEach(m => dedup.set(m.materialType, m))
+  const materialPayload = [...dedup.values()]
+  const withoutOthers = materialPayload.filter(x => !(x.materialType === OTHERS && x.pricingMode === PRICING_MODE_WEIGHT))
+  const sumWithoutOthers = withoutOthers.reduce((acc, x) => acc + (x.ratio || 0), 0)
   if (sumWithoutOthers > 1) {
     ElMessage.warning('除其余外的材料占比总和不能超过1')
     return
   }
-  const hasOthersInPayload = materialPayload.some(x => x.materialType === OTHERS)
-  const finalPayload = hasOthersInPayload
-    ? [...withoutOthers, ...(othersRatio.value > 0 ? [{ materialType: OTHERS, ratio: othersRatio.value }] : [])]
+  const hasOthersInPayload = materialPayload.some(x => x.materialType === OTHERS && x.pricingMode === PRICING_MODE_WEIGHT)
+  const finalPayload: MaterialRatioItem[] = hasOthersInPayload
+    ? [...withoutOthers, ...(othersRatio.value > 0 ? [{ materialType: OTHERS, ratio: othersRatio.value, pricingMode: PRICING_MODE_WEIGHT }] : [])]
     : materialPayload
-  const sum = finalPayload.reduce((acc, x) => acc + x.ratio, 0)
-  if (!form.scopeValue.trim() || form.recoveryRatio == null || finalPayload.length === 0 || sum <= 0 || sum > 1) {
-    ElMessage.warning('请检查车型、材料占比，且占比总和需大于0且不超过1')
+  const sum = finalPayload
+    .filter(x => x.pricingMode === PRICING_MODE_WEIGHT)
+    .reduce((acc, x) => acc + (x.ratio || 0), 0)
+  if (!form.scopeValue.trim() || form.recoveryRatio == null || finalPayload.length === 0 || sum > 1) {
+    ElMessage.warning('请检查车型、材料配置，且按重量材料占比总和不超过1')
     return
   }
   const scopeValue = form.scopeValue.trim()
@@ -137,7 +164,14 @@ function materialLabel(type: string) {
 }
 
 function materialText(row: MaterialTemplate) {
-  return (row.materials || []).map(m => `${materialLabel(m.materialType)}:${m.ratio}`).join('，')
+  return (row.materials || [])
+    .map(m => {
+      if ((m.pricingMode || PRICING_MODE_WEIGHT) === PRICING_MODE_FIXED_TOTAL) {
+        return `${materialLabel(m.materialType)}:固定总价${m.fixedTotalPrice ?? 0}元`
+      }
+      return `${materialLabel(m.materialType)}:${m.ratio}`
+    })
+    .join('，')
 }
 
 function templateScopeText(row: MaterialTemplate) {
@@ -205,26 +239,42 @@ load()
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="材料占比" required>
+      <el-form-item label="材料配置" required>
         <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
           <div v-for="(m, idx) in form.materials" :key="idx" style="display:flex;gap:8px;align-items:center;">
             <el-select v-model="m.materialType" filterable allow-create default-first-option style="width:320px;">
               <el-option v-for="opt in materialOptions" :key="opt.type" :label="opt.label" :value="opt.type" />
             </el-select>
+            <el-select v-model="m.pricingMode" style="width:140px;">
+              <el-option :value="PRICING_MODE_WEIGHT" label="按重量计价" />
+              <el-option :value="PRICING_MODE_FIXED_TOTAL" label="固定总价" />
+            </el-select>
             <el-input-number
-              v-if="m.materialType.trim().toLowerCase() !== OTHERS"
+              v-if="(m.pricingMode || PRICING_MODE_WEIGHT) === PRICING_MODE_WEIGHT && m.materialType.trim().toLowerCase() !== OTHERS"
               v-model="m.ratio"
               :min="0"
               :max="1"
               :precision="4"
               :step="0.01"
             />
-            <el-input v-else :model-value="othersRatio.toFixed(4)" disabled />
+            <el-input
+              v-else-if="(m.pricingMode || PRICING_MODE_WEIGHT) === PRICING_MODE_WEIGHT"
+              :model-value="othersRatio.toFixed(4)"
+              disabled
+            />
+            <el-input-number
+              v-else
+              v-model="m.fixedTotalPrice"
+              :min="0"
+              :precision="2"
+              :step="10"
+              style="width:180px;"
+            />
             <el-button type="danger" plain @click="removeMaterial(idx)">删除</el-button>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <el-button @click="addMaterial">新增材料</el-button>
-            <span>占比总和：{{ ratioSum.toFixed(4) }}<template v-if="hasOthers">（其余自动补齐：{{ othersRatio.toFixed(4) }}）</template></span>
+            <span>按重量占比总和：{{ ratioSum.toFixed(4) }}<template v-if="hasOthers">（其余自动补齐：{{ othersRatio.toFixed(4) }}）</template></span>
           </div>
         </div>
       </el-form-item>

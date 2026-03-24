@@ -20,8 +20,14 @@ public class MaterialTemplateItem {
     @Column(name = "material_type", nullable = false, length = 32)
     private String materialType;
 
-    @Column(name = "ratio", nullable = false, precision = 5, scale = 4)
+    @Column(name = "ratio", precision = 5, scale = 4)
     private BigDecimal ratio;
+
+    @Column(name = "pricing_mode", nullable = false, length = 16)
+    private String pricingMode;
+
+    @Column(name = "fixed_total_price", precision = 10, scale = 2)
+    private BigDecimal fixedTotalPrice;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;

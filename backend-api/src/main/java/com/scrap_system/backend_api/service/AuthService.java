@@ -159,17 +159,22 @@ public class AuthService {
         UserAccount wxUser = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("user not found"));
         
-        // 查找要绑定的后台账号
-        UserAccount staffUser = userAccountRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("staff account not found"));
+        // 只能用临时的微信账号去绑定，如果当前账号已经是正式员工账号，不允许再次绑定并防止被误删
+        if (wxUser.getUsername() != null && !wxUser.getUsername().startsWith("wx_")) {
+            throw new IllegalArgumentException("当前微信已绑定过员工账号，请勿重复绑定");
+        }
 
-        if (!passwordEncoder.matches(password, staffUser.getPasswordHash())) {
-            throw new IllegalArgumentException("invalid password");
+        // 查找要绑定的后台账号
+        UserAccount staffUser = userAccountRepository.findByUsername(username != null ? username.trim() : "")
+                .orElseThrow(() -> new IllegalArgumentException("找不到该员工账号"));
+
+        if (password == null || staffUser.getPasswordHash() == null || !passwordEncoder.matches(password, staffUser.getPasswordHash())) {
+            throw new IllegalArgumentException("密码错误");
         }
 
         // 检查该后台账号是否已经被绑定过
         if (staffUser.getWxOpenid() != null && !staffUser.getWxOpenid().equals(wxUser.getWxOpenid())) {
-            throw new IllegalArgumentException("this staff account is already bound to another wechat");
+            throw new IllegalArgumentException("该员工账号已被其他微信绑定");
         }
 
         // 核心逻辑：将微信信息从临时账号转移到后台账号

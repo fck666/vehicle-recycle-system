@@ -21,10 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +35,8 @@ public class ValuationService {
     private static final String SCOPE_VEHICLE = "VEHICLE";
     private static final String SCOPE_VEHICLE_TYPE = "VEHICLE_TYPE";
     private static final String OTHERS = "others";
+    private static final String PRICING_MODE_WEIGHT = "WEIGHT";
+    private static final String PRICING_MODE_FIXED_TOTAL = "FIXED_TOTAL";
 
     private final VehicleModelRepository vehicleModelRepository;
     private final MaterialTemplateRepository materialTemplateRepository;
@@ -46,8 +50,8 @@ public class ValuationService {
         VehicleModel vehicle = vehicleModelRepository.findById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
         MaterialTemplate template = resolveTemplate(vehicle);
-        Map<String, BigDecimal> ratios = resolveRatios(template);
-        return calculateAndSave(vehicleId, vehicle, template.getRecoveryRatio(), ratios, template.getOthersPricePerKgOverride());
+        List<TemplateMaterialItem> materialItems = resolveMaterialItems(template);
+        return calculateAndSave(vehicleId, vehicle, template.getRecoveryRatio(), materialItems, template.getOthersPricePerKgOverride());
     }
 
     @Transactional
@@ -55,20 +59,20 @@ public class ValuationService {
         VehicleModel vehicle = vehicleModelRepository.findById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
         MaterialTemplate template = resolveTemplate(vehicle);
-        Map<String, BigDecimal> ratios = new HashMap<>(resolveRatios(template));
-        if (request.getSteelRatio() != null) ratios.put("steel", request.getSteelRatio());
-        if (request.getAluminumRatio() != null) ratios.put("aluminum", request.getAluminumRatio());
-        if (request.getCopperRatio() != null) ratios.put("copper", request.getCopperRatio());
+        List<TemplateMaterialItem> materialItems = new ArrayList<>(resolveMaterialItems(template));
+        overrideWeightRatio(materialItems, "steel", request.getSteelRatio());
+        overrideWeightRatio(materialItems, "aluminum", request.getAluminumRatio());
+        overrideWeightRatio(materialItems, "copper", request.getCopperRatio());
         VehicleModel working = vehicle;
         if (request.getCurbWeight() != null) {
             working = new VehicleModel();
             working.setId(vehicle.getId());
             working.setCurbWeight(request.getCurbWeight());
         }
-        return calculateAndSave(vehicleId, working, template.getRecoveryRatio(), ratios, template.getOthersPricePerKgOverride());
+        return calculateAndSave(vehicleId, working, template.getRecoveryRatio(), materialItems, template.getOthersPricePerKgOverride());
     }
 
-    private ValuationResult calculateAndSave(Long vehicleId, VehicleModel vehicle, BigDecimal recoveryRatio, Map<String, BigDecimal> ratios, BigDecimal othersPriceOverride) {
+    private ValuationResult calculateAndSave(Long vehicleId, VehicleModel vehicle, BigDecimal recoveryRatio, List<TemplateMaterialItem> materialItems, BigDecimal othersPriceOverride) {
         BigDecimal curbWeight = vehicle.getCurbWeight();
         if (curbWeight == null || curbWeight.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("Vehicle curbWeight invalid for valuation, vehicleId=" + vehicleId);
@@ -77,21 +81,10 @@ public class ValuationService {
             throw new IllegalStateException("Template recoveryRatio invalid for valuation, vehicleId=" + vehicleId);
         }
         log.info("Valuation start, vehicleId={}, curbWeight={}, recoveryRatio={}, ratioCount={}",
-                vehicleId, curbWeight, recoveryRatio, ratios == null ? 0 : ratios.size());
-        List<MaterialValueItem> materialValues = ratios.entrySet().stream()
-                .filter(e -> e.getValue() != null && e.getValue().compareTo(BigDecimal.ZERO) > 0)
-                .map(e -> {
-                    BigDecimal price = OTHERS.equals(e.getKey()) && othersPriceOverride != null ? othersPriceOverride : getPrice(e.getKey());
-                    BigDecimal weight = curbWeight.multiply(e.getValue()).setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal value = weight.multiply(price).setScale(2, RoundingMode.HALF_UP);
-                    return MaterialValueItem.builder()
-                            .materialType(e.getKey())
-                            .ratio(e.getValue())
-                            .weightKg(weight)
-                            .pricePerKg(price)
-                            .value(value)
-                            .build();
-                })
+                vehicleId, curbWeight, recoveryRatio, materialItems == null ? 0 : materialItems.size());
+        List<MaterialValueItem> materialValues = materialItems.stream()
+                .map(item -> toMaterialValue(item, curbWeight, othersPriceOverride))
+                .filter(v -> v != null && v.getValue() != null && v.getValue().compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator.comparing(MaterialValueItem::getMaterialType))
                 .toList();
         BigDecimal sum = materialValues.stream().map(MaterialValueItem::getValue).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -126,22 +119,74 @@ public class ValuationService {
                 .orElseThrow(() -> new IllegalStateException("Material template not found for vehicle: " + vehicle.getId() + ", type: " + vehicle.getVehicleType()));
     }
 
-    private Map<String, BigDecimal> resolveRatios(MaterialTemplate template) {
+    private List<TemplateMaterialItem> resolveMaterialItems(MaterialTemplate template) {
         List<MaterialTemplateItem> items = materialTemplateItemRepository.findByTemplateIdOrderByIdAsc(template.getId());
         if (!items.isEmpty()) {
-            Map<String, BigDecimal> map = new HashMap<>();
+            List<TemplateMaterialItem> mapped = new ArrayList<>();
             for (MaterialTemplateItem item : items) {
+                String mode = normalizePricingMode(item.getPricingMode());
+                if (PRICING_MODE_FIXED_TOTAL.equals(mode)) {
+                    if (item.getFixedTotalPrice() != null && item.getFixedTotalPrice().compareTo(BigDecimal.ZERO) > 0) {
+                        mapped.add(new TemplateMaterialItem(item.getMaterialType(), mode, null, item.getFixedTotalPrice()));
+                    }
+                    continue;
+                }
                 if (item.getRatio() != null && item.getRatio().compareTo(BigDecimal.ZERO) > 0) {
-                    map.put(item.getMaterialType(), item.getRatio());
+                    mapped.add(new TemplateMaterialItem(item.getMaterialType(), PRICING_MODE_WEIGHT, item.getRatio(), null));
                 }
             }
-            return map;
+            return mapped;
         }
-        Map<String, BigDecimal> fallback = new HashMap<>();
-        fallback.put("steel", template.getSteelRatio());
-        fallback.put("aluminum", template.getAluminumRatio());
-        fallback.put("copper", template.getCopperRatio());
+        List<TemplateMaterialItem> fallback = new ArrayList<>();
+        fallback.add(new TemplateMaterialItem("steel", PRICING_MODE_WEIGHT, template.getSteelRatio(), null));
+        fallback.add(new TemplateMaterialItem("aluminum", PRICING_MODE_WEIGHT, template.getAluminumRatio(), null));
+        fallback.add(new TemplateMaterialItem("copper", PRICING_MODE_WEIGHT, template.getCopperRatio(), null));
         return fallback;
+    }
+
+    private MaterialValueItem toMaterialValue(TemplateMaterialItem item, BigDecimal curbWeight, BigDecimal othersPriceOverride) {
+        if (item == null) return null;
+        if (PRICING_MODE_FIXED_TOTAL.equals(item.pricingMode)) {
+            if (item.fixedTotalPrice == null || item.fixedTotalPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                return null;
+            }
+            return MaterialValueItem.builder()
+                    .materialType(item.materialType)
+                    .ratio(null)
+                    .weightKg(null)
+                    .pricePerKg(null)
+                    .value(item.fixedTotalPrice.setScale(2, RoundingMode.HALF_UP))
+                    .build();
+        }
+        if (item.ratio == null || item.ratio.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        BigDecimal price = OTHERS.equals(item.materialType) && othersPriceOverride != null ? othersPriceOverride : getPrice(item.materialType);
+        BigDecimal weight = curbWeight.multiply(item.ratio).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal value = weight.multiply(price).setScale(2, RoundingMode.HALF_UP);
+        return MaterialValueItem.builder()
+                .materialType(item.materialType)
+                .ratio(item.ratio)
+                .weightKg(weight)
+                .pricePerKg(price)
+                .value(value)
+                .build();
+    }
+
+    private void overrideWeightRatio(List<TemplateMaterialItem> items, String materialType, BigDecimal ratio) {
+        if (ratio == null || items == null) return;
+        for (TemplateMaterialItem item : items) {
+            if (materialType.equals(item.materialType) && PRICING_MODE_WEIGHT.equals(item.pricingMode)) {
+                item.ratio = ratio;
+            }
+        }
+    }
+
+    private String normalizePricingMode(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return PRICING_MODE_WEIGHT;
+        String mode = raw.trim().toUpperCase(Locale.ROOT);
+        if (PRICING_MODE_FIXED_TOTAL.equals(mode)) return PRICING_MODE_FIXED_TOTAL;
+        return PRICING_MODE_WEIGHT;
     }
 
     private static BigDecimal valueOf(List<MaterialValueItem> items, String materialType) {
@@ -174,5 +219,19 @@ public class ValuationService {
     
     public List<ValuationRecord> getHistory(Long vehicleId) {
         return valuationRecordRepository.findByVehicleIdOrderByCreatedTimeDesc(vehicleId);
+    }
+
+    private static class TemplateMaterialItem {
+        private final String materialType;
+        private final String pricingMode;
+        private BigDecimal ratio;
+        private final BigDecimal fixedTotalPrice;
+
+        private TemplateMaterialItem(String materialType, String pricingMode, BigDecimal ratio, BigDecimal fixedTotalPrice) {
+            this.materialType = materialType;
+            this.pricingMode = pricingMode;
+            this.ratio = ratio;
+            this.fixedTotalPrice = fixedTotalPrice;
+        }
     }
 }

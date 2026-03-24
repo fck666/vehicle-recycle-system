@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS material_template_item (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   template_id BIGINT NOT NULL,
   material_type VARCHAR(32) NOT NULL,
-  ratio DECIMAL(5,4) NOT NULL,
+  ratio DECIMAL(5,4),
+  pricing_mode VARCHAR(16) NOT NULL DEFAULT 'WEIGHT',
+  fixed_total_price DECIMAL(10,2),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uk_material_template_item (template_id, material_type),
   INDEX idx_material_template_item_tid (template_id),
@@ -270,6 +272,9 @@ WHERE (scope_type IS NULL OR scope_type = '')
   AND vehicle_type IS NOT NULL;
 ALTER TABLE material_template MODIFY COLUMN scope_value VARCHAR(64) NOT NULL;
 ALTER TABLE material_template ADD UNIQUE KEY uk_material_template_scope (scope_type, scope_value);
+ALTER TABLE material_template_item MODIFY COLUMN ratio DECIMAL(5,4) NULL;
+ALTER TABLE material_template_item ADD COLUMN pricing_mode VARCHAR(16) NOT NULL DEFAULT 'WEIGHT';
+ALTER TABLE material_template_item ADD COLUMN fixed_total_price DECIMAL(10,2) NULL;
 
 CREATE TABLE IF NOT EXISTS vehicle_dismantle_record (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,

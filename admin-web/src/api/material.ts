@@ -45,6 +45,10 @@ export async function listMaterialTemplates(): Promise<MaterialTemplate[]> {
   return requestJson<MaterialTemplate[]>('GET', '/api/material-templates')
 }
 
+export async function getVehicleTemplateMaterials(vehicleId: number): Promise<MaterialRatioItem[]> {
+  return requestJson<MaterialRatioItem[]>('GET', `/api/material-templates/vehicle/${vehicleId}/materials`)
+}
+
 export async function upsertMaterialTemplate(payload: {
   vehicleType?: string
   scopeType: 'VEHICLE_TYPE' | 'VEHICLE'
