@@ -17,6 +17,22 @@ console.log('Final API URL:', BASE_URL);
 
 export const API_BASE_URL = BASE_URL;
 
+let redirectingToLogin = false;
+
+const clearAuthAndRedirectToLogin = () => {
+  uni.removeStorageSync('token');
+  uni.removeStorageSync('userId');
+  uni.removeStorageSync('roles');
+  uni.removeStorageSync('username');
+  if (redirectingToLogin) return;
+  redirectingToLogin = true;
+  uni.showToast({ title: '登录已失效，请重新登录', icon: 'none' });
+  setTimeout(() => {
+    uni.reLaunch({ url: '/pages/login/login' });
+    redirectingToLogin = false;
+  }, 300);
+};
+
 const request = (options) => {
   return new Promise((resolve, reject) => {
     uni.request({
@@ -30,9 +46,8 @@ const request = (options) => {
       success: (res) => {
         if (res.statusCode === 200) {
           resolve(res.data);
-        } else if (res.statusCode === 401) {
-          uni.showToast({ title: '请先登录', icon: 'none' });
-          uni.navigateTo({ url: '/pages/login/login' });
+        } else if (res.statusCode === 401 || res.statusCode === 403) {
+          clearAuthAndRedirectToLogin();
           reject(res);
         } else {
           uni.showToast({ title: res.data.message || '请求失败', icon: 'none' });

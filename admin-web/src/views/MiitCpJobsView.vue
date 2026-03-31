@@ -215,7 +215,7 @@ load()
         <el-input-number v-model="form.pageSize" :min="1" :max="50" />
       </el-form-item>
       <el-form-item label="最多处理条数">
-        <el-input-number v-model="form.limit" :min="1" :max="5000" />
+        <el-input-number v-model="form.limit" :min="1" :max="20000" />
       </el-form-item>
       <el-form-item label="需要可视浏览器">
         <el-switch v-model="form.headful" />

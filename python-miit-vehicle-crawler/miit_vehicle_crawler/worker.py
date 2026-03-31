@@ -55,7 +55,6 @@ def run_worker(backend: str, token: str, poll_interval_sec: float = 3.0) -> None
             retry_items = config.get("retryItems")
 
             def report(progress: dict[str, Any]) -> None:
-                payload = {"config": config, "progress": progress}
                 msg = progress.get("stage")
                 inserted = progress.get("inserted")
                 updated = progress.get("updated")
@@ -68,7 +67,7 @@ def run_worker(backend: str, token: str, poll_interval_sec: float = 3.0) -> None
                     updated=updated if isinstance(updated, int) else None,
                     skipped=skipped if isinstance(skipped, int) else None,
                     message=str(msg) if msg else None,
-                    details_json=json.dumps(payload, ensure_ascii=False),
+                    details_json=None,  # Do not upload huge config on every progress tick
                 )
 
             report({"stage": "RUNNING", "worker": worker_id})

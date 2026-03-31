@@ -26,7 +26,7 @@ public class JwtTokenService {
     @Value("${app.security.jwt.issuer:vehicle-recycle-system}")
     private String issuer;
 
-    @Value("${app.security.jwt.ttl-seconds:86400}")
+    @Value("${app.security.jwt.ttl-seconds:259200}") // 3 days in seconds (3 * 24 * 60 * 60 = 259200)
     private long ttlSeconds;
 
     public String issue(Long userId, List<String> roleCodes, String clientType, String sessionId, String tokenId) {

@@ -63,7 +63,7 @@ public class AdminMiitCpJobController {
         }
         int pageSize = request.getPageSize() == null ? 10 : Math.min(Math.max(request.getPageSize(), 1), 50);
         Integer limit = request.getLimit();
-        if (limit != null) limit = Math.min(Math.max(limit, 1), 5000);
+        if (limit != null) limit = Math.min(Math.max(limit, 1), 20000);
         boolean headful = request.getHeadful() == null || request.getHeadful();
 
         Long userId = authentication != null && authentication.getPrincipal() instanceof Long ? (Long) authentication.getPrincipal() : null;
