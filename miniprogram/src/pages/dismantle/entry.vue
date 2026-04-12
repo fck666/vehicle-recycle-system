@@ -79,6 +79,53 @@
       </view>
     </view>
 
+    <!-- 高价值部件录入 -->
+    <view class="form-card" style="margin-top: 15px;">
+      <view class="section-title" style="font-size:14px; font-weight:bold; margin-bottom: 10px; color:#333;">高价值部件录入</view>
+      
+      <view v-for="(part, index) in partItems" :key="index" class="part-item-box" style="background: #f9f9f9; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+        <view style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+          <text style="font-size:13px; font-weight:bold;">部件 {{ index + 1 }}</text>
+          <text style="color:#ff4d4f; font-size:12px;" @click="removePart(index)">删除</text>
+        </view>
+        
+        <view class="form-item" style="padding: 0; margin-bottom: 8px; border:none;">
+          <text class="label" style="width:60px;">名称</text>
+          <picker mode="selector" :range="PART_OPTIONS" @change="e => part.partName = PART_OPTIONS[e.detail.value]" style="flex:1;">
+            <view class="input" style="height:36px; line-height:36px; background:#fff; border:1px solid #eee; padding:0 10px;">
+              {{ part.partName || '请选择部件名称' }}
+            </view>
+          </picker>
+        </view>
+
+        <view style="display:flex; gap:10px;">
+          <view class="form-item" style="padding: 0; margin-bottom: 8px; border:none; flex:1;">
+            <text class="label" style="width:40px;">数量</text>
+            <input class="input" type="number" v-model="part.count" style="background:#fff; border:1px solid #eee; height:36px;" />
+          </view>
+          <view class="form-item" style="padding: 0; margin-bottom: 8px; border:none; flex:1;">
+            <text class="label" style="width:40px;">总价</text>
+            <input class="input" type="digit" v-model="part.totalPrice" placeholder="元" style="background:#fff; border:1px solid #eee; height:36px;" />
+          </view>
+        </view>
+        
+        <view style="display:flex; align-items:center; gap:10px; margin-bottom: 8px;">
+          <text style="font-size:13px; color:#666; width:60px;">个体差异</text>
+          <switch :checked="part.isPremium" @change="e => part.isPremium = e.detail.value" color="#ff9800" style="transform:scale(0.8); margin-left:-10px;"/>
+          <text style="font-size:11px; color:#999; flex:1;">(如成色极好/二手件导致的高溢价，非标准底价)</text>
+        </view>
+
+        <view class="form-item" style="padding: 0; border:none;">
+          <text class="label" style="width:60px;">去向/备注</text>
+          <input class="input" type="text" v-model="part.remark" placeholder="如:走二手件/改装音响" style="background:#fff; border:1px solid #eee; height:36px;" />
+        </view>
+      </view>
+
+      <view style="text-align:center; padding: 10px 0;">
+        <button type="default" size="mini" @click="addPart" style="color:#07c160; border-color:#07c160; background:#fff;">+ 添加部件</button>
+      </view>
+    </view>
+
     <view class="submit-bar">
       <button class="submit-btn" type="primary" @click="handleSubmit">提交记录</button>
     </view>
@@ -98,6 +145,26 @@ const fixedItems = ref([]);
 const formOther = ref('');
 const formRemark = ref('');
 const candidates = ref([]);
+
+// 部件录入相关
+const PART_OPTIONS = ref([]);
+const partItems = ref([]);
+
+const addPart = () => {
+  partItems.value.push({
+    category: 'PART',
+    partName: '',
+    count: 1,
+    totalPrice: '',
+    pricingMode: 'FIXED_TOTAL',
+    isPremium: false,
+    remark: ''
+  });
+};
+
+const removePart = (index) => {
+  partItems.value.splice(index, 1);
+};
 
 const parseDetails = (detailsJson) => {
   if (!detailsJson) return [];
@@ -135,7 +202,22 @@ onLoad((options) => {
   loadVehicle();
   loadRecycleTypes();
   loadSameSeries();
+  loadComponents();
 });
+
+const loadComponents = async () => {
+  try {
+    const components = await request({ url: '/components' }) || [];
+    if (components && components.length > 0) {
+      PART_OPTIONS.value = components.map(c => c.name);
+    } else {
+      // 兜底数据
+      PART_OPTIONS.value = ['三元催化', '发动机', '变速箱', '轮毂', '电机', '空调压缩机', '发电机', '音响', '中控', '座椅', '电瓶'];
+    }
+  } catch (e) {
+    PART_OPTIONS.value = ['三元催化', '发动机', '变速箱', '轮毂', '电机', '空调压缩机', '发电机', '音响', '中控', '座椅', '电瓶'];
+  }
+};
 
 const loadSameSeries = async () => {
   try {
@@ -203,11 +285,20 @@ const handleSubmit = () => {
   const hasValue =
     dynamicItems.value.some(item => Number(item.value) > 0) ||
     fixedItems.value.some(item => Number(item.totalPrice) > 0) ||
-    Number(formOther.value) > 0;
+    Number(formOther.value) > 0 ||
+    partItems.value.length > 0;
   
   if (!hasValue) {
-    uni.showToast({ title: '请至少输入一项数值', icon: 'none' });
+    uni.showToast({ title: '请至少输入一项数值或添加一个部件', icon: 'none' });
     return;
+  }
+
+  // Validate part items
+  for (let i = 0; i < partItems.value.length; i++) {
+    if (!partItems.value[i].partName) {
+      uni.showToast({ title: `请选择部件 ${i + 1} 的名称`, icon: 'none' });
+      return;
+    }
   }
 
   uni.showLoading({ title: '提交中...' });
@@ -227,6 +318,7 @@ const handleSubmit = () => {
     else if (item.type === 'battery') battery = val;
     else if (val > 0) {
       detailItems.push({
+        category: 'MATERIAL',
         materialType: item.type,
         pricingMode: 'WEIGHT',
         weightKg: val,
@@ -238,11 +330,25 @@ const handleSubmit = () => {
     const totalPrice = Number(item.totalPrice) || 0;
     if (totalPrice > 0) {
       detailItems.push({
+        category: 'MATERIAL',
         materialType: item.type,
         pricingMode: 'FIXED_TOTAL',
         totalPrice
       });
     }
+  });
+
+  // Append part items
+  partItems.value.forEach(part => {
+    detailItems.push({
+      category: 'PART',
+      partName: part.partName,
+      count: Number(part.count) || 1,
+      totalPrice: Number(part.totalPrice) || 0,
+      pricingMode: 'FIXED_TOTAL',
+      isPremium: part.isPremium || false,
+      remark: part.remark
+    });
   });
 
   const data = {

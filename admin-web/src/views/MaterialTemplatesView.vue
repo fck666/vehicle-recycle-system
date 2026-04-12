@@ -206,7 +206,6 @@ load()
         <template #default="{ row }">{{ materialText(row) }}</template>
       </el-table-column>
       <el-table-column prop="othersPricePerKgOverride" label="其余单价覆盖(元/kg)" width="170" />
-      <el-table-column prop="recoveryRatio" label="回收系数" width="120" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button v-if="canEdit" size="small" @click="openEdit(row)">编辑</el-button>
@@ -278,11 +277,15 @@ load()
           </div>
         </div>
       </el-form-item>
-      <el-form-item label="回收系数" required>
-        <el-input-number v-model="form.recoveryRatio" :min="0" :max="1" :precision="4" :step="0.01" />
-      </el-form-item>
+      <!-- Hidden recovery ratio -->
+      <input type="hidden" v-model="form.recoveryRatio" />
       <el-form-item label="其余单价覆盖">
-        <el-input-number v-model="form.othersPricePerKgOverride" :min="0" :precision="2" :step="0.1" />
+        <el-input-number v-model="form.othersPricePerKgOverride" :min="0" :precision="2" :step="0.1" style="width: 100%;">
+          <template #append>元/kg</template>
+        </el-input-number>
+        <div style="font-size:12px;color:#999;line-height:1.2;margin-top:4px;">
+          设置后，该模板内未单独配置的其余材料，将统一使用此单价估算。不设置则使用全局大盘行情中的others单价。
+        </div>
       </el-form-item>
     </el-form>
     <template #footer>

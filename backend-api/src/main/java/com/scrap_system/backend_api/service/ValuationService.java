@@ -87,8 +87,17 @@ public class ValuationService {
                 .filter(v -> v != null && v.getValue() != null && v.getValue().compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator.comparing(MaterialValueItem::getMaterialType))
                 .toList();
-        BigDecimal sum = materialValues.stream().map(MaterialValueItem::getValue).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalValue = sum.multiply(recoveryRatio).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal sumWeight = materialValues.stream()
+                .filter(v -> !"PART".equals(v.getCategory()))
+                .map(MaterialValueItem::getValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal sumPart = materialValues.stream()
+                .filter(v -> "PART".equals(v.getCategory()))
+                .map(MaterialValueItem::getValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        
+        // Removed recoveryRatio multiplication as recorded prices are already scrap prices
+        BigDecimal totalValue = sumWeight.add(sumPart).setScale(2, RoundingMode.HALF_UP);
         BigDecimal steelValue = valueOf(materialValues, "steel");
         BigDecimal aluminumValue = valueOf(materialValues, "aluminum");
         BigDecimal copperValue = valueOf(materialValues, "copper");
@@ -151,6 +160,7 @@ public class ValuationService {
                 return null;
             }
             return MaterialValueItem.builder()
+                    .category("PART")
                     .materialType(item.materialType)
                     .ratio(null)
                     .weightKg(null)
@@ -165,6 +175,7 @@ public class ValuationService {
         BigDecimal weight = curbWeight.multiply(item.ratio).setScale(2, RoundingMode.HALF_UP);
         BigDecimal value = weight.multiply(price).setScale(2, RoundingMode.HALF_UP);
         return MaterialValueItem.builder()
+                .category("MATERIAL")
                 .materialType(item.materialType)
                 .ratio(item.ratio)
                 .weightKg(weight)

@@ -46,7 +46,7 @@ public class VehicleDismantleRecord {
     @Column(name = "remark", length = 512)
     private String remark;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
+    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @PrePersist

@@ -3,6 +3,10 @@
     <view class="header">
       <view class="title">拆解记录</view>
       <view class="subtitle" v-if="vehicle">{{ vehicle.brand }} {{ vehicle.model }}</view>
+      <view class="subtitle" v-if="vehicle" style="margin-top: 4px; opacity: 0.7; font-size: 12px;">
+        <text style="margin-right: 12px;">产品ID: {{ vehicle.productId || '-' }}</text>
+        <text>产品号: {{ vehicle.productNo || '-' }}</text>
+      </view>
     </view>
 
     <view class="loading-state" v-if="loading">
@@ -32,6 +36,19 @@
             <view class="record-remark" v-if="getFixedPriceText(item)">
               <text class="r-label">固定总价: </text>
               <text class="r-text">{{ getFixedPriceText(item) }}</text>
+            </view>
+            <view class="part-details" v-if="getPartDetails(item).length > 0">
+              <view class="part-section-title">高价值部件明细</view>
+              <view class="part-grid">
+                <view class="part-row" v-for="(part, pIdx) in getPartDetails(item)" :key="pIdx">
+                  <text class="p-name">{{ part.partName }}</text>
+                  <text v-if="part.isPremium" class="premium-tag">个体差异</text>
+                  <text class="p-count">x{{ part.count }}</text>
+                  <text :class="['p-price', part.isPremium ? 'premium-price' : '']" v-if="part.totalPrice > 0">¥{{ part.totalPrice }}</text>
+                  <text class="p-remark" v-if="part.remark">({{ part.remark }})</text>
+                </view>
+              </view>
+              <view class="premium-note" v-if="getPartDetails(item).some(p => p.isPremium)">注：标注“个体差异”的部件受实车状况或二手件渠道影响，不计入标准保底回收价参考。</view>
             </view>
             <view class="record-remark" v-if="item.remark">
               <text class="r-label">备注: </text>
@@ -78,6 +95,19 @@
                     <text class="r-label">固定总价: </text>
                     <text class="r-text">{{ getFixedPriceText(item) }}</text>
                   </view>
+                  <view class="part-details" v-if="getPartDetails(item).length > 0">
+                    <view class="part-section-title">高价值部件明细</view>
+                    <view class="part-grid">
+                      <view class="part-row" v-for="(part, pIdx) in getPartDetails(item)" :key="pIdx">
+                        <text class="p-name">{{ part.partName }}</text>
+                        <text v-if="part.isPremium" class="premium-tag">个体差异</text>
+                        <text class="p-count">x{{ part.count }}</text>
+                        <text :class="['p-price', part.isPremium ? 'premium-price' : '']" v-if="part.totalPrice > 0">¥{{ part.totalPrice }}</text>
+                        <text class="p-remark" v-if="part.remark">({{ part.remark }})</text>
+                      </view>
+                    </view>
+                    <view class="premium-note" v-if="getPartDetails(item).some(p => p.isPremium)">注：标注“个体差异”的部件受实车状况或二手件渠道影响，不计入标准保底回收价参考。</view>
+                  </view>
                 </view>
               </view>
             </view>
@@ -120,10 +150,15 @@ const parseDetails = (detailsJson) => {
   }
 };
 
+const getPartDetails = (record) => {
+  const details = parseDetails(record.detailsJson);
+  return details.filter(d => d.category === 'PART');
+};
+
 const getFixedPriceText = (record) => {
   const details = parseDetails(record.detailsJson);
   return details
-    .filter(d => d.pricingMode === 'FIXED_TOTAL' && Number(d.totalPrice) > 0)
+    .filter(d => d.pricingMode === 'FIXED_TOTAL' && d.category !== 'PART' && Number(d.totalPrice) > 0)
     .map(d => `${typeLabelMap[d.materialType] || d.materialType}:${Number(d.totalPrice).toFixed(2)}元`)
     .join('，');
 };
@@ -234,4 +269,17 @@ const initData = async () => {
 .c-subtitle { font-size: 13px; color: #666; margin-bottom: 8px; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .tag.high { background: #e8f9f0; color: #07c160; }
+
+.part-details { margin-top: 10px; padding: 8px 12px; background: #f6ffed; border-radius: 6px; border: 1px solid #b7eb8f; }
+.part-section-title { font-size: 12px; color: #389e0d; font-weight: bold; margin-bottom: 8px; }
+.part-grid { display: flex; flex-direction: column; gap: 6px; }
+.part-row { font-size: 13px; color: #333; display: flex; align-items: center; gap: 8px; }
+.p-name { font-weight: bold; min-width: 60px; }
+.p-count { color: #666; font-size: 12px; background: #e6f7ff; padding: 1px 6px; border-radius: 10px; }
+.p-price { color: #cf1322; font-weight: 500; }
+.p-remark { color: #8c8c8c; font-size: 12px; margin-left: auto; }
+
+.premium-tag { font-size: 10px; color: #ff9800; background: #fff3e0; padding: 1px 4px; border-radius: 2px; margin-left: 4px; }
+.premium-price { color: #ff9800; }
+.premium-note { font-size: 11px; color: #ff9800; margin-top: 8px; border-top: 1px dashed #ffe0b2; padding-top: 6px; }
 </style>

@@ -293,3 +293,41 @@ CREATE TABLE IF NOT EXISTS vehicle_dismantle_record (
   INDEX idx_vdr_vehicle_id (vehicle_id),
   INDEX idx_vdr_operator (operator_id)
 );
+
+-- ----------------------------
+-- Table structure for component_dict
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS component_dict (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  sort_order INT DEFAULT 0,
+  is_enabled BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ----------------------------
+-- Records of component_dict
+-- ----------------------------
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('三元催化', 10);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('发动机', 20);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('变速箱', 30);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('轮毂', 40);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('电机', 50);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('空调压缩机', 60);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('发电机', 70);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('音响', 80);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('中控', 90);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('座椅', 100);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('电瓶', 110);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('方向盘', 120);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('转向机', 130);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('水箱', 140);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('水箱盖', 150);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('风扇', 160);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('ABS', 170);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('录音机', 180);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('仪表', 190);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('雨刷', 200);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('暖风电机', 210);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('天窗', 220);
+INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('油箱', 230);

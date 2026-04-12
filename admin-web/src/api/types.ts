@@ -62,11 +62,24 @@ export interface VehicleDismantleRecord {
 }
 
 export interface DismantleDetailItem {
+  category?: 'MATERIAL' | 'PART'
   materialType: string
   pricingMode: 'WEIGHT' | 'FIXED_TOTAL'
   weightKg?: number | null
   ratio?: number | null
   totalPrice?: number | null
+  partName?: string
+  count?: number
+  isPremium?: boolean
+  remark?: string
+}
+
+export interface ComponentDict {
+  id: number
+  name: string
+  sortOrder: number
+  isEnabled: boolean
+  createdAt: string
 }
 
 export interface VehicleUpsertRequest {

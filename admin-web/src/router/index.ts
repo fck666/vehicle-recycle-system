@@ -23,6 +23,7 @@ const router = createRouter({
     { path: '/recycle-prices', name: 'recycle-prices', component: RecyclePricesView },
     { path: '/dismantle-records', name: 'dismantle-records', component: DismantleRecordsView },
     { path: '/material-templates', name: 'material-templates', component: MaterialTemplatesView },
+    { path: '/components', name: 'components', component: () => import('../views/ComponentDictView.vue') },
     { path: '/jobs/material-price', name: 'jobs-material-price', component: MaterialFetchRunsView },
     { path: '/jobs/vehicle', name: 'jobs-vehicle', component: VehicleIngestRunsView },
     { path: '/jobs/miit-cp', name: 'jobs-miit-cp', component: MiitCpJobsView },

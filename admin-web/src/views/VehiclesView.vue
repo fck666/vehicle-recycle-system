@@ -121,7 +121,7 @@ function parseDismantleDetails(detailsJson?: string | null): DismantleDetailItem
     const parsed = JSON.parse(detailsJson)
     const items = Array.isArray(parsed) ? parsed : parsed?.items
     if (!Array.isArray(items)) return []
-    return items.filter((x: any) => x && typeof x.materialType === 'string')
+    return items.filter((x: any) => x && (typeof x.materialType === 'string' || typeof x.partName === 'string'))
   } catch {
     return []
   }
@@ -129,9 +129,13 @@ function parseDismantleDetails(detailsJson?: string | null): DismantleDetailItem
 
 function getFixedPriceText(record: VehicleDismantleRecord) {
   const items = parseDismantleDetails(record.detailsJson)
-    .filter(x => x.pricingMode === 'FIXED_TOTAL' && (x.totalPrice || 0) > 0)
+    .filter(x => x.pricingMode === 'FIXED_TOTAL' && x.category !== 'PART' && (x.totalPrice || 0) > 0)
     .map(x => `${typeLabelMap[x.materialType] || x.materialType}:${Number(x.totalPrice || 0).toFixed(2)}元`)
   return items.join('，')
+}
+
+function getPartDetails(record: VehicleDismantleRecord) {
+  return parseDismantleDetails(record.detailsJson).filter(x => x.category === 'PART')
 }
 
 // Use a map to store dynamic values. Standard keys map to fixed fields, others to detailsJson if backend supported.
@@ -1034,6 +1038,32 @@ loadFacets()
     </div>
     
     <el-table v-else :data="dismantleRecords" v-loading="dismantleLoading" stripe border>
+      <el-table-column type="expand">
+        <template #default="{ row }">
+          <div v-if="getPartDetails(row).length > 0" style="padding: 12px 20px; background: #f9fdf9;">
+            <div style="font-size: 13px; font-weight: 600; color: #67c23a; margin-bottom: 8px;">高价值部件明细</div>
+            <el-table :data="getPartDetails(row)" size="small" border style="width: 100%;">
+              <el-table-column prop="partName" label="部件名称" width="150">
+                <template #default="{ row: part }">
+                  <span style="font-weight: 600;">{{ part.partName }}</span>
+                  <el-tag v-if="part.isPremium" size="small" type="warning" style="margin-left: 8px;">个体差异</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="count" label="数量" width="80" />
+              <el-table-column prop="totalPrice" label="总计金额" width="120">
+                <template #default="{ row: part }">
+                  <span :style="{ color: part.isPremium ? '#e6a23c' : '#f56c6c' }">¥{{ part.totalPrice || 0 }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="remark" label="去向/备注" min-width="200" />
+            </el-table>
+            <div v-if="getPartDetails(row).some(p => p.isPremium)" style="font-size: 11px; color: #e6a23c; margin-top: 8px;">
+              注：标注“个体差异”的部件受实车状况或二手件渠道影响，不计入标准保底回收价参考。
+            </div>
+          </div>
+          <div v-else style="padding: 10px 20px; color: #999; font-size: 12px;">暂无部件明细</div>
+        </template>
+      </el-table-column>
       <el-table-column prop="createdAt" label="录入时间" width="160" />
       <el-table-column prop="operatorName" label="操作员" width="120" />
       

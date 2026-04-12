@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 @Data
 @Builder
 public class MaterialValueItem {
+    private String category;
     private String materialType;
     private BigDecimal ratio;
     private BigDecimal weightKg;
