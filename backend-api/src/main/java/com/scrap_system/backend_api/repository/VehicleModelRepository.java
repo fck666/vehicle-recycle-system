@@ -16,6 +16,8 @@ import java.util.Optional;
 public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long>, JpaSpecificationExecutor<VehicleModel> {
     Optional<VehicleModel> findByProductId(String productId);
     Optional<VehicleModel> findByProductNo(String productNo);
+    List<VehicleModel> findAllByProductIdOrderByIdDesc(String productId);
+    List<VehicleModel> findAllByProductNoOrderByIdDesc(String productNo);
 
     List<VehicleModel> findByBatchNo(Integer batchNo);
     List<VehicleModel> findByBatchNoBetween(Integer start, Integer end);

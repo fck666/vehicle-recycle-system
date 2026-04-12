@@ -30,6 +30,23 @@ export async function importRecyclePrices(file: File): Promise<void> {
   }
 }
 
+export async function upsertRecyclePrice(payload: { materialName: string; price: number; unit?: string }): Promise<void> {
+  const token = getToken()
+  const res = await fetch('/api/admin/recycle-prices', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `Save failed: ${res.status}`)
+  }
+}
+
 export async function upsertMaterialPrice(payload: { type: string; pricePerKg: number; currency?: string; unit?: string; effectiveDate?: string }): Promise<MaterialPrice> {
   return requestJson<MaterialPrice>('POST', '/api/material-prices', payload)
 }

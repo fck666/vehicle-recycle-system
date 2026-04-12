@@ -9,13 +9,19 @@ BACKEND_SERVICE="${BACKEND_SERVICE:-backend-api}"
 REMOTE_FRONTEND_DIR="${REMOTE_FRONTEND_DIR:-/var/www/html/admin}"
 REMOTE_OFFICIAL_DIR="${REMOTE_OFFICIAL_DIR:-/var/www/html}"
 REMOTE_BACKEND_JAR="${REMOTE_BACKEND_JAR:-/root/backend-prod.jar}"
-REMOTE_BACKEND_ENV_FILE="${REMOTE_BACKEND_ENV_FILE:-/etc/vehicle-recycle-system/backend-api.env}"
+REMOTE_BACKEND_ENV_FILE="${REMOTE_BACKEND_ENV_FILE:-/etc/backend-api/backend-api.env}"
 REMOTE_BACKEND_ENV_DIR="$(dirname "$REMOTE_BACKEND_ENV_FILE")"
 LOCAL_FRONTEND_DIST="${LOCAL_FRONTEND_DIST:-$ROOT_DIR/admin-web/dist}"
 LOCAL_OFFICIAL_PAGE="${LOCAL_OFFICIAL_PAGE:-$ROOT_DIR/deploy/index.html}"
 LOCAL_OFFICIAL_FAVICON="${LOCAL_OFFICIAL_FAVICON:-$ROOT_DIR/admin-web/public/favicon.svg}"
 LOCAL_BACKEND_JAR="${LOCAL_BACKEND_JAR:-$ROOT_DIR/backend-api/target/backend-api-0.0.1-SNAPSHOT.jar}"
 LOCAL_BACKEND_ENV_FILE="${LOCAL_BACKEND_ENV_FILE:-}"
+LOCAL_JOURNALD_CONFIG="${LOCAL_JOURNALD_CONFIG:-$ROOT_DIR/deploy/ops/journald-vehicle-recycle-system.conf}"
+LOCAL_LOGROTATE_CONFIG="${LOCAL_LOGROTATE_CONFIG:-$ROOT_DIR/deploy/ops/vehicle-recycle-system.logrotate}"
+REMOTE_JOURNALD_CONFIG="${REMOTE_JOURNALD_CONFIG:-/etc/systemd/journald.conf.d/vehicle-recycle-system.conf}"
+REMOTE_LOGROTATE_CONFIG="${REMOTE_LOGROTATE_CONFIG:-/etc/logrotate.d/vehicle-recycle-system}"
+REMOTE_MIN_FREE_MB="${REMOTE_MIN_FREE_MB:-2048}"
+REMOTE_MAX_USED_PERCENT="${REMOTE_MAX_USED_PERCENT:-85}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%F %T')" "$1"
@@ -60,6 +66,9 @@ fi
 log "准备服务器目录"
 run_ssh "mkdir -p '$REMOTE_FRONTEND_DIR' '$REMOTE_OFFICIAL_DIR'"
 
+log "检查服务器磁盘空间"
+run_ssh "used=\$(df -Pm / | awk 'NR==2 {gsub(/%/, \"\", \$5); print \$5}'); avail=\$(df -Pm / | awk 'NR==2 {print \$4}'); echo \"rootfs: used=\${used}% avail=\${avail}MB\"; if [ \"\$used\" -ge '$REMOTE_MAX_USED_PERCENT' ] || [ \"\$avail\" -lt '$REMOTE_MIN_FREE_MB' ]; then echo '服务器磁盘空间不足，终止发布' >&2; exit 1; fi"
+
 log "上传前端产物"
 scp -P "$SSH_PORT" -r "$LOCAL_FRONTEND_DIST"/. "${SSH_USER}@${SSH_HOST}:${REMOTE_FRONTEND_DIR}/"
 
@@ -88,7 +97,18 @@ run_ssh "test -f '$REMOTE_BACKEND_ENV_FILE' || (echo '缺少环境变量文件: 
 run_ssh "grep -qE '^WX_MINIAPP_SECRET=' '$REMOTE_BACKEND_ENV_FILE' || (echo '缺少 WX_MINIAPP_SECRET（小程序登录会失败）' >&2; exit 1)"
 run_ssh "grep -qE '^JWT_SECRET=' '$REMOTE_BACKEND_ENV_FILE' || (echo '缺少 JWT_SECRET（后端将无法启动）' >&2; exit 1)"
 
+if [[ -f "$LOCAL_JOURNALD_CONFIG" && -f "$LOCAL_LOGROTATE_CONFIG" ]]; then
+  log "安装生产日志治理配置"
+  run_ssh "sudo mkdir -p '$(dirname "$REMOTE_JOURNALD_CONFIG")'"
+  scp -P "$SSH_PORT" "$LOCAL_JOURNALD_CONFIG" "${SSH_USER}@${SSH_HOST}:/tmp/vehicle-recycle-system-journald.conf"
+  scp -P "$SSH_PORT" "$LOCAL_LOGROTATE_CONFIG" "${SSH_USER}@${SSH_HOST}:/tmp/vehicle-recycle-system.logrotate"
+  run_ssh "set -e; sudo mv /tmp/vehicle-recycle-system-journald.conf '$REMOTE_JOURNALD_CONFIG'; sudo mv /tmp/vehicle-recycle-system.logrotate '$REMOTE_LOGROTATE_CONFIG'; sudo chmod 644 '$REMOTE_JOURNALD_CONFIG' '$REMOTE_LOGROTATE_CONFIG'; sudo systemctl restart systemd-journald; sudo logrotate -f '$REMOTE_LOGROTATE_CONFIG' >/dev/null 2>&1 || true; sudo journalctl --vacuum-size=500M >/dev/null 2>&1 || true"
+fi
+
 log "重启服务器前后端服务"
 run_ssh "sudo nginx -t && sudo systemctl reload nginx && sudo systemctl restart '$BACKEND_SERVICE' && sudo systemctl status '$BACKEND_SERVICE' --no-pager"
+
+log "检查后端启动与登录接口可达性"
+run_ssh "for i in \$(seq 1 30); do curl -fsS -o /dev/null -X OPTIONS 'http://127.0.0.1:8090/api/auth/login' -H 'Origin: https://xhyscrapcar.com' -H 'Access-Control-Request-Method: POST' && exit 0; sleep 2; done; echo 'backend login endpoint not ready on 127.0.0.1:8090' >&2; sudo journalctl -u '$BACKEND_SERVICE' -n 80 --no-pager >&2; exit 1"
 
 log "发布完成"

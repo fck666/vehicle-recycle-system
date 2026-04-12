@@ -59,16 +59,19 @@ def run_worker(backend: str, token: str, poll_interval_sec: float = 3.0) -> None
                 inserted = progress.get("inserted")
                 updated = progress.get("updated")
                 skipped = progress.get("skipped")
-                update_miit_cp_job_progress(
-                    session,
-                    backend,
-                    run_id,
-                    inserted=inserted if isinstance(inserted, int) else None,
-                    updated=updated if isinstance(updated, int) else None,
-                    skipped=skipped if isinstance(skipped, int) else None,
-                    message=str(msg) if msg else None,
-                    details_json=None,  # Do not upload huge config on every progress tick
-                )
+                try:
+                    update_miit_cp_job_progress(
+                        session,
+                        backend,
+                        run_id,
+                        inserted=inserted if isinstance(inserted, int) else None,
+                        updated=updated if isinstance(updated, int) else None,
+                        skipped=skipped if isinstance(skipped, int) else None,
+                        message=str(msg) if msg else None,
+                        details_json=None,
+                    )
+                except Exception as e:
+                    log("miit.worker.progress.error", run_id=run_id, stage=msg, err=str(e))
 
             report({"stage": "RUNNING", "worker": worker_id})
             result = sync_cp(
@@ -109,4 +112,3 @@ def run_worker(backend: str, token: str, poll_interval_sec: float = 3.0) -> None
             except Exception:
                 pass
             time.sleep(poll_interval_sec)
-

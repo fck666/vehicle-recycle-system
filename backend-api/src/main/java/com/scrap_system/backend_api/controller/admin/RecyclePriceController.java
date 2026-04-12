@@ -1,5 +1,6 @@
 package com.scrap_system.backend_api.controller.admin;
 
+import com.scrap_system.backend_api.dto.admin.RecyclePriceImportDto;
 import com.scrap_system.backend_api.model.MaterialPrice;
 import com.scrap_system.backend_api.service.RecyclePriceService;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,17 @@ public class RecyclePriceController {
             return ResponseEntity.ok("Import successful");
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Import failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/admin/recycle-prices")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> upsertRecyclePrice(@RequestBody RecyclePriceImportDto dto) {
+        try {
+            recyclePriceService.saveRecyclePrice(dto);
+            return ResponseEntity.ok("Save successful");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Save failed: " + e.getMessage());
         }
     }
     

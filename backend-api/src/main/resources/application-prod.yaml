@@ -8,6 +8,10 @@ spring:
     activate:
       on-profile: prod
   
+  sql:
+    init:
+      mode: never
+
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:scrap_system}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf-8
     username: ${DB_USER:root}
@@ -22,7 +26,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update # Or validate in strict production
+      ddl-auto: none
     show-sql: false
     properties:
       hibernate:

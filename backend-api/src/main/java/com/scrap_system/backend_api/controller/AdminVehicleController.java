@@ -33,14 +33,18 @@ public class AdminVehicleController {
             @RequestParam(required = false) String sourceUrl
     ) {
         if (!isBlank(productNo)) {
-            return vehicleModelRepository.findByProductNo(productNo.trim())
-                    .map(ResponseEntity::ok)
-                    .orElseGet(() -> ResponseEntity.notFound().build());
+            List<VehicleModel> matches = vehicleModelRepository.findAllByProductNoOrderByIdDesc(productNo.trim());
+            if (!matches.isEmpty()) {
+                return ResponseEntity.ok(matches.get(0));
+            }
+            return ResponseEntity.notFound().build();
         }
         if (!isBlank(productId)) {
-            return vehicleModelRepository.findByProductId(productId.trim())
-                    .map(ResponseEntity::ok)
-                    .orElseGet(() -> ResponseEntity.notFound().build());
+            List<VehicleModel> matches = vehicleModelRepository.findAllByProductIdOrderByIdDesc(productId.trim());
+            if (!matches.isEmpty()) {
+                return ResponseEntity.ok(matches.get(0));
+            }
+            return ResponseEntity.notFound().build();
         }
         if (!isBlank(sourceUrl)) {
              // Lookup via vehicle document

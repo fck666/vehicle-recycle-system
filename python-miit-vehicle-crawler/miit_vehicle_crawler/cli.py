@@ -19,6 +19,15 @@ from .parse import parse_pdf, to_vehicle_spec_item
 from .worker import run_worker
 
 
+def normalize_backend_url(value: str | None) -> str:
+    if value is None:
+        return ""
+    normalized = value.strip()
+    normalized = normalized.strip("`").strip()
+    normalized = normalized.strip("\"'").strip()
+    return normalized.rstrip("/")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="miit-vehicle-crawler")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -64,6 +73,7 @@ def main() -> None:
     w.add_argument("--poll-interval", type=float, default=3.0)
 
     args = parser.parse_args()
+    backend = normalize_backend_url(getattr(args, "backend", None))
 
     if args.cmd == "discover":
         n = interactive_discover(args.output, headful=not args.headless)
@@ -79,6 +89,7 @@ def main() -> None:
         return
 
     if args.cmd == "upsert":
+        args.backend = backend or args.backend
         run_upsert(args)
         return
 
@@ -94,7 +105,7 @@ def main() -> None:
             qymc_list = [x.strip() for x in args.qymc_list.split(",") if x.strip()]
         limit = int(args.limit) if args.limit else 0
         result = sync_cp(
-            backend=args.backend,
+            backend=backend or args.backend,
             token=token,
             pc_from=args.pc_from,
             pc_to=args.pc_to,
@@ -114,7 +125,7 @@ def main() -> None:
 
     if args.cmd == "worker":
         token = args.token.strip() if args.token else ""
-        run_worker(args.backend, token, poll_interval_sec=float(args.poll_interval))
+        run_worker(backend or args.backend, token, poll_interval_sec=float(args.poll_interval))
         return
 
 

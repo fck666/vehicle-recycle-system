@@ -69,27 +69,38 @@ public class RecyclePriceService {
 
             private void saveData() {
                 for (RecyclePriceImportDto dto : cachedDataList) {
-                    processAndSave(dto);
+                    processAndSave(dto, "EXCEL_IMPORT", false);
                 }
             }
         }).sheet().doRead();
     }
 
-    private void processAndSave(RecyclePriceImportDto dto) {
+    @Transactional
+    public void saveRecyclePrice(RecyclePriceImportDto dto) {
+        processAndSave(dto, "MANUAL_ENTRY", true);
+    }
+
+    private void processAndSave(RecyclePriceImportDto dto, String sourceName, boolean strict) {
         if (dto.getMaterialName() == null || dto.getPrice() == null) {
+            if (strict) {
+                throw new IllegalArgumentException("材料类型和价格不能为空");
+            }
             return;
         }
 
         String materialName = dto.getMaterialName().trim();
-        String type = null;
-        for (Map.Entry<String, String> entry : MATERIAL_NAME_MAP.entrySet()) {
-            if (entry.getKey().equals(materialName)) {
-                type = entry.getValue();
-                break;
+        String type = MATERIAL_NAME_MAP.get(materialName);
+        if (type == null) {
+            String normalized = materialName.toLowerCase();
+            if (MATERIAL_NAME_MAP.containsValue(normalized)) {
+                type = normalized;
             }
         }
-        
+
         if (type == null) {
+            if (strict) {
+                throw new IllegalArgumentException("未知材料类型: " + materialName);
+            }
             log.warn("Unknown material name: {}", materialName);
             return;
         }
@@ -128,7 +139,7 @@ public class RecyclePriceService {
         existing.setCurrency("CNY");
         existing.setEffectiveDate(effectiveDate);
         existing.setFetchedAt(java.time.LocalDateTime.now());
-        existing.setSourceName("EXCEL_IMPORT");
+        existing.setSourceName(sourceName);
         existing.setPriceCategory("RECYCLE");
 
         materialPriceRepository.save(existing);
