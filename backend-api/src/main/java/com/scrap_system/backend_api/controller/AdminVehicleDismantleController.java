@@ -25,6 +25,13 @@ public class AdminVehicleDismantleController {
         return ResponseEntity.ok(dismantleRecordRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId));
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<VehicleDismantleRecord> getById(@PathVariable Long id) {
+        return dismantleRecordRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping
     public ResponseEntity<VehicleDismantleRecord> create(@RequestBody VehicleDismantleRecord record) {
         if (record.getVehicleId() == null) {
@@ -39,6 +46,27 @@ public class AdminVehicleDismantleController {
         }
         
         return ResponseEntity.ok(dismantleRecordRepository.save(record));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<VehicleDismantleRecord> update(@PathVariable Long id, @RequestBody VehicleDismantleRecord record) {
+        return dismantleRecordRepository.findById(id).map(existing -> {
+            existing.setSteelWeight(record.getSteelWeight());
+            existing.setAluminumWeight(record.getAluminumWeight());
+            existing.setCopperWeight(record.getCopperWeight());
+            existing.setBatteryWeight(record.getBatteryWeight());
+            existing.setOtherWeight(record.getOtherWeight());
+            existing.setDetailsJson(record.getDetailsJson());
+            existing.setRemark(record.getRemark());
+            
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof Long) {
+                Long userId = (Long) authentication.getPrincipal();
+                existing.setOperatorId(String.valueOf(userId));
+                userAccountRepository.findById(userId).ifPresent(u -> existing.setOperatorName(u.getUsername()));
+            }
+            return ResponseEntity.ok(dismantleRecordRepository.save(existing));
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")

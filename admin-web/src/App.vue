@@ -32,7 +32,6 @@ async function logout() {
         <el-menu-item v-if="isAdmin" index="/vehicle-mappings">车型关联</el-menu-item>
         <el-menu-item index="/recycle-prices">回收价格</el-menu-item>
         <el-menu-item index="/material-prices">大盘行情</el-menu-item>
-        <el-menu-item index="/material-templates">估值方式</el-menu-item>
         <el-menu-item index="/components">组件字典</el-menu-item>
         <el-menu-item v-if="isAdmin" index="/users">用户管理</el-menu-item>
         <el-sub-menu v-if="isAdmin" index="/jobs">

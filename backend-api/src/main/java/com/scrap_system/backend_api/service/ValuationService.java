@@ -1,18 +1,18 @@
 package com.scrap_system.backend_api.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.scrap_system.backend_api.dto.MaterialValueItem;
+import com.scrap_system.backend_api.dto.SameSeriesCandidateDto;
+import com.scrap_system.backend_api.dto.SameSeriesResponse;
+import com.scrap_system.backend_api.dto.ValuationDimension;
 import com.scrap_system.backend_api.dto.ValuationResult;
 import com.scrap_system.backend_api.model.MaterialPrice;
-import com.scrap_system.backend_api.model.MaterialTemplate;
-import com.scrap_system.backend_api.model.MaterialTemplateItem;
 import com.scrap_system.backend_api.model.ValuationRecord;
+import com.scrap_system.backend_api.model.VehicleDismantleRecord;
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.MaterialPriceRepository;
-import com.scrap_system.backend_api.repository.MaterialTemplateItemRepository;
-import com.scrap_system.backend_api.repository.MaterialTemplateRepository;
 import com.scrap_system.backend_api.repository.ValuationRecordRepository;
+import com.scrap_system.backend_api.repository.VehicleDismantleRecordRepository;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,227 +22,177 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ValuationService {
-    private static final String SCOPE_VEHICLE = "VEHICLE";
-    private static final String SCOPE_VEHICLE_TYPE = "VEHICLE_TYPE";
-    private static final String OTHERS = "others";
-    private static final String PRICING_MODE_WEIGHT = "WEIGHT";
-    private static final String PRICING_MODE_FIXED_TOTAL = "FIXED_TOTAL";
 
     private final VehicleModelRepository vehicleModelRepository;
-    private final MaterialTemplateRepository materialTemplateRepository;
-    private final MaterialTemplateItemRepository materialTemplateItemRepository;
     private final MaterialPriceRepository materialPriceRepository;
     private final ValuationRecordRepository valuationRecordRepository;
+    private final VehicleDismantleRecordRepository dismantleRecordRepository;
+    private final SameSeriesService sameSeriesService;
     private final ObjectMapper objectMapper;
 
     @Transactional
     public ValuationResult calculateValuation(Long vehicleId) {
         VehicleModel vehicle = vehicleModelRepository.findById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
-        MaterialTemplate template = resolveTemplate(vehicle);
-        List<TemplateMaterialItem> materialItems = resolveMaterialItems(template);
-        return calculateAndSave(vehicleId, vehicle, template.getRecoveryRatio(), materialItems, template.getOthersPricePerKgOverride());
-    }
 
-    @Transactional
-    public ValuationResult calculatePreciseValuation(Long vehicleId, com.scrap_system.backend_api.dto.PreciseValuationRequest request) {
-        VehicleModel vehicle = vehicleModelRepository.findById(vehicleId)
-                .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
-        MaterialTemplate template = resolveTemplate(vehicle);
-        List<TemplateMaterialItem> materialItems = new ArrayList<>(resolveMaterialItems(template));
-        overrideWeightRatio(materialItems, "steel", request.getSteelRatio());
-        overrideWeightRatio(materialItems, "aluminum", request.getAluminumRatio());
-        overrideWeightRatio(materialItems, "copper", request.getCopperRatio());
-        VehicleModel working = vehicle;
-        if (request.getCurbWeight() != null) {
-            working = new VehicleModel();
-            working.setId(vehicle.getId());
-            working.setCurbWeight(request.getCurbWeight());
+        // 1. Get exact match records (Same productNo or just the same vehicle ID if no productNo)
+        List<Long> exactMatchVehicleIds = new ArrayList<>();
+        if (vehicle.getProductNo() != null && !vehicle.getProductNo().trim().isEmpty()) {
+            exactMatchVehicleIds = vehicleModelRepository.findAllByProductNoOrderByIdDesc(vehicle.getProductNo())
+                    .stream().map(VehicleModel::getId).toList();
+        } else {
+            exactMatchVehicleIds.add(vehicle.getId());
         }
-        return calculateAndSave(vehicleId, working, template.getRecoveryRatio(), materialItems, template.getOthersPricePerKgOverride());
-    }
+        List<VehicleDismantleRecord> exactMatchRecords = dismantleRecordRepository.findByVehicleIdIn(exactMatchVehicleIds);
 
-    private ValuationResult calculateAndSave(Long vehicleId, VehicleModel vehicle, BigDecimal recoveryRatio, List<TemplateMaterialItem> materialItems, BigDecimal othersPriceOverride) {
-        BigDecimal curbWeight = vehicle.getCurbWeight();
-        if (curbWeight == null || curbWeight.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalStateException("Vehicle curbWeight invalid for valuation, vehicleId=" + vehicleId);
-        }
-        if (recoveryRatio == null || recoveryRatio.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalStateException("Template recoveryRatio invalid for valuation, vehicleId=" + vehicleId);
-        }
-        log.info("Valuation start, vehicleId={}, curbWeight={}, recoveryRatio={}, ratioCount={}",
-                vehicleId, curbWeight, recoveryRatio, materialItems == null ? 0 : materialItems.size());
-        List<MaterialValueItem> materialValues = materialItems.stream()
-                .map(item -> toMaterialValue(item, curbWeight, othersPriceOverride))
-                .filter(v -> v != null && v.getValue() != null && v.getValue().compareTo(BigDecimal.ZERO) > 0)
-                .sorted(Comparator.comparing(MaterialValueItem::getMaterialType))
-                .toList();
-        BigDecimal sumWeight = materialValues.stream()
-                .filter(v -> !"PART".equals(v.getCategory()))
-                .map(MaterialValueItem::getValue)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal sumPart = materialValues.stream()
-                .filter(v -> "PART".equals(v.getCategory()))
-                .map(MaterialValueItem::getValue)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // 2. Get same series match records using SameSeriesService
+        List<Long> highSeriesVehicleIds = new ArrayList<>();
+        List<Long> mediumSeriesVehicleIds = new ArrayList<>();
         
-        // Removed recoveryRatio multiplication as recorded prices are already scrap prices
-        BigDecimal totalValue = sumWeight.add(sumPart).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal steelValue = valueOf(materialValues, "steel");
-        BigDecimal aluminumValue = valueOf(materialValues, "aluminum");
-        BigDecimal copperValue = valueOf(materialValues, "copper");
-        BigDecimal batteryValue = valueOf(materialValues, "battery");
+        sameSeriesService.findSameSeries(vehicle.getId(), 4, 50).ifPresent(response -> {
+            for (SameSeriesCandidateDto candidate : response.getCandidates()) {
+                if ("HIGH".equals(candidate.getConfidenceLevel())) {
+                    highSeriesVehicleIds.add(candidate.getVehicleId());
+                } else if ("MEDIUM".equals(candidate.getConfidenceLevel())) {
+                    mediumSeriesVehicleIds.add(candidate.getVehicleId());
+                }
+            }
+        });
+
+        // Always include current vehicle in high confidence pool if not already there
+        if (!highSeriesVehicleIds.contains(vehicle.getId())) {
+            highSeriesVehicleIds.add(0, vehicle.getId());
+        }
+
+        List<VehicleDismantleRecord> seriesHighRecords = dismantleRecordRepository.findByVehicleIdIn(highSeriesVehicleIds);
+        List<VehicleDismantleRecord> seriesMediumRecords = dismantleRecordRepository.findByVehicleIdIn(mediumSeriesVehicleIds);
+
+        // 3. Compute dimensions
+        ValuationDimension exactDimension = computeDimension(exactMatchRecords);
+        ValuationDimension seriesHighDimension = computeDimension(seriesHighRecords);
+        ValuationDimension seriesMediumDimension = computeDimension(seriesMediumRecords);
+
+        BigDecimal totalValue = exactDimension.getRecordCount() > 0 ? exactDimension.getAvgValue() : seriesHighDimension.getAvgValue();
+        if (totalValue == null || totalValue.compareTo(BigDecimal.ZERO) == 0) {
+            totalValue = seriesMediumDimension.getAvgValue();
+        }
+        if (totalValue == null) totalValue = BigDecimal.ZERO;
+
+        // 4. Save history record (optional, keeping for compatibility if needed)
         ValuationRecord record = new ValuationRecord();
         record.setVehicleId(vehicleId);
         record.setValuationResult(totalValue);
-        record.setSteelValue(steelValue);
-        record.setAluminumValue(aluminumValue);
-        record.setCopperValue(copperValue);
-        record.setBatteryValue(batteryValue);
-        record.setDetailsJson(writeDetails(materialValues));
+        record.setSteelValue(BigDecimal.ZERO);
+        record.setAluminumValue(BigDecimal.ZERO);
+        record.setCopperValue(BigDecimal.ZERO);
+        record.setBatteryValue(BigDecimal.ZERO);
+        record.setDetailsJson("{\"source\":\"DATA_DRIVEN\"}");
         valuationRecordRepository.save(record);
+
         return ValuationResult.builder()
                 .totalValue(totalValue)
-                .steelValue(steelValue)
-                .aluminumValue(aluminumValue)
-                .copperValue(copperValue)
-                .batteryValue(batteryValue)
-                .materialValues(materialValues)
+                .exactMatch(exactDimension)
+                .seriesHighMatch(seriesHighDimension)
+                .seriesMediumMatch(seriesMediumDimension)
                 .build();
     }
 
-    private MaterialTemplate resolveTemplate(VehicleModel vehicle) {
-        return materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE, String.valueOf(vehicle.getId()))
-                .or(() -> materialTemplateRepository.findByScopeTypeAndScopeValue(SCOPE_VEHICLE_TYPE, vehicle.getVehicleType()))
-                .or(() -> materialTemplateRepository.findByVehicleType(vehicle.getVehicleType()))
-                .orElseThrow(() -> new IllegalStateException("Material template not found for vehicle: " + vehicle.getId() + ", type: " + vehicle.getVehicleType()));
+    private ValuationDimension computeDimension(List<VehicleDismantleRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return emptyDimension();
+        }
+
+        BigDecimal sum = BigDecimal.ZERO;
+        BigDecimal min = null;
+        BigDecimal max = null;
+        int count = 0;
+
+        for (VehicleDismantleRecord record : records) {
+            BigDecimal recordValue = calculateRecordValue(record);
+            if (recordValue == null || recordValue.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            sum = sum.add(recordValue);
+            if (min == null || recordValue.compareTo(min) < 0) min = recordValue;
+            if (max == null || recordValue.compareTo(max) > 0) max = recordValue;
+            count++;
+        }
+
+        if (count == 0) {
+            return emptyDimension();
+        }
+
+        BigDecimal avg = sum.divide(new BigDecimal(count), 2, RoundingMode.HALF_UP);
+        return ValuationDimension.builder()
+                .recordCount(count)
+                .avgValue(avg)
+                .minValue(min)
+                .maxValue(max)
+                .build();
     }
 
-    private List<TemplateMaterialItem> resolveMaterialItems(MaterialTemplate template) {
-        List<MaterialTemplateItem> items = materialTemplateItemRepository.findByTemplateIdOrderByIdAsc(template.getId());
-        if (!items.isEmpty()) {
-            List<TemplateMaterialItem> mapped = new ArrayList<>();
-            for (MaterialTemplateItem item : items) {
-                String mode = normalizePricingMode(item.getPricingMode());
-                if (PRICING_MODE_FIXED_TOTAL.equals(mode)) {
-                    if (item.getFixedTotalPrice() != null && item.getFixedTotalPrice().compareTo(BigDecimal.ZERO) > 0) {
-                        mapped.add(new TemplateMaterialItem(item.getMaterialType(), mode, null, item.getFixedTotalPrice()));
+    private ValuationDimension emptyDimension() {
+        return ValuationDimension.builder()
+                .recordCount(0)
+                .avgValue(BigDecimal.ZERO)
+                .minValue(BigDecimal.ZERO)
+                .maxValue(BigDecimal.ZERO)
+                .build();
+    }
+
+    private BigDecimal calculateRecordValue(VehicleDismantleRecord record) {
+        BigDecimal value = BigDecimal.ZERO;
+        
+        value = value.add(safeMultiply(record.getSteelWeight(), getPrice("steel")));
+        value = value.add(safeMultiply(record.getAluminumWeight(), getPrice("aluminum")));
+        value = value.add(safeMultiply(record.getCopperWeight(), getPrice("copper")));
+        value = value.add(safeMultiply(record.getBatteryWeight(), getPrice("battery")));
+        value = value.add(safeMultiply(record.getOtherWeight(), getPrice("others")));
+
+        if (record.getDetailsJson() != null && !record.getDetailsJson().trim().isEmpty()) {
+            try {
+                JsonNode root = objectMapper.readTree(record.getDetailsJson());
+                JsonNode items = root.get("items");
+                if (items != null && items.isArray()) {
+                    for (JsonNode item : items) {
+                        String category = item.path("category").asText("");
+                        if ("PART".equals(category)) {
+                            boolean isPremium = item.path("isPremium").asBoolean(false);
+                            if (!isPremium) {
+                                BigDecimal totalPrice = new BigDecimal(item.path("totalPrice").asText("0"));
+                                value = value.add(totalPrice);
+                            }
+                        } else if ("MATERIAL".equals(category)) {
+                            String matType = item.path("materialType").asText("");
+                            BigDecimal weight = new BigDecimal(item.path("weightKg").asText("0"));
+                            value = value.add(safeMultiply(weight, getPrice(matType)));
+                        }
                     }
-                    continue;
                 }
-                if (item.getRatio() != null && item.getRatio().compareTo(BigDecimal.ZERO) > 0) {
-                    mapped.add(new TemplateMaterialItem(item.getMaterialType(), PRICING_MODE_WEIGHT, item.getRatio(), null));
-                }
-            }
-            return mapped;
-        }
-        List<TemplateMaterialItem> fallback = new ArrayList<>();
-        fallback.add(new TemplateMaterialItem("steel", PRICING_MODE_WEIGHT, template.getSteelRatio(), null));
-        fallback.add(new TemplateMaterialItem("aluminum", PRICING_MODE_WEIGHT, template.getAluminumRatio(), null));
-        fallback.add(new TemplateMaterialItem("copper", PRICING_MODE_WEIGHT, template.getCopperRatio(), null));
-        return fallback;
-    }
-
-    private MaterialValueItem toMaterialValue(TemplateMaterialItem item, BigDecimal curbWeight, BigDecimal othersPriceOverride) {
-        if (item == null) return null;
-        if (PRICING_MODE_FIXED_TOTAL.equals(item.pricingMode)) {
-            if (item.fixedTotalPrice == null || item.fixedTotalPrice.compareTo(BigDecimal.ZERO) <= 0) {
-                return null;
-            }
-            return MaterialValueItem.builder()
-                    .category("PART")
-                    .materialType(item.materialType)
-                    .ratio(null)
-                    .weightKg(null)
-                    .pricePerKg(null)
-                    .value(item.fixedTotalPrice.setScale(2, RoundingMode.HALF_UP))
-                    .build();
-        }
-        if (item.ratio == null || item.ratio.compareTo(BigDecimal.ZERO) <= 0) {
-            return null;
-        }
-        BigDecimal price = OTHERS.equals(item.materialType) && othersPriceOverride != null ? othersPriceOverride : getPrice(item.materialType);
-        BigDecimal weight = curbWeight.multiply(item.ratio).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal value = weight.multiply(price).setScale(2, RoundingMode.HALF_UP);
-        return MaterialValueItem.builder()
-                .category("MATERIAL")
-                .materialType(item.materialType)
-                .ratio(item.ratio)
-                .weightKg(weight)
-                .pricePerKg(price)
-                .value(value)
-                .build();
-    }
-
-    private void overrideWeightRatio(List<TemplateMaterialItem> items, String materialType, BigDecimal ratio) {
-        if (ratio == null || items == null) return;
-        for (TemplateMaterialItem item : items) {
-            if (materialType.equals(item.materialType) && PRICING_MODE_WEIGHT.equals(item.pricingMode)) {
-                item.ratio = ratio;
+            } catch (Exception e) {
+                log.warn("Failed to parse detailsJson for record {}", record.getId(), e);
             }
         }
+        return value.setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String normalizePricingMode(String raw) {
-        if (raw == null || raw.trim().isEmpty()) return PRICING_MODE_WEIGHT;
-        String mode = raw.trim().toUpperCase(Locale.ROOT);
-        if (PRICING_MODE_FIXED_TOTAL.equals(mode)) return PRICING_MODE_FIXED_TOTAL;
-        return PRICING_MODE_WEIGHT;
-    }
-
-    private static BigDecimal valueOf(List<MaterialValueItem> items, String materialType) {
-        return items.stream()
-                .filter(i -> materialType.equals(i.getMaterialType()))
-                .findFirst()
-                .map(MaterialValueItem::getValue)
-                .orElse(BigDecimal.ZERO);
-    }
-
-    private String writeDetails(List<MaterialValueItem> materialValues) {
-        try {
-            return objectMapper.writeValueAsString(materialValues);
-        } catch (JsonProcessingException e) {
-            return "[]";
-        }
+    private BigDecimal safeMultiply(BigDecimal weight, BigDecimal price) {
+        if (weight == null || price == null) return BigDecimal.ZERO;
+        return weight.multiply(price);
     }
 
     private BigDecimal getPrice(String type) {
-        // First try to get RECYCLE price
         return materialPriceRepository.findFirstByTypeAndPriceCategoryOrderByEffectiveDateDesc(type, "RECYCLE")
                 .map(MaterialPrice::getPricePerKg)
-                // Fallback to MARKET price if no recycle price found (or return ZERO if strict decoupling is desired)
-                // Based on user requirement "Valuation template uses recycle price", strict decoupling is safer.
-                // However, to avoid sudden 0 value if recycle price is missing, we can fallback or just return 0.
-                // The user said "Market price decoupled from valuation system".
-                // So we should NOT fallback to market price.
                 .orElse(BigDecimal.ZERO);
     }
     
     public List<ValuationRecord> getHistory(Long vehicleId) {
         return valuationRecordRepository.findByVehicleIdOrderByCreatedTimeDesc(vehicleId);
-    }
-
-    private static class TemplateMaterialItem {
-        private final String materialType;
-        private final String pricingMode;
-        private BigDecimal ratio;
-        private final BigDecimal fixedTotalPrice;
-
-        private TemplateMaterialItem(String materialType, String pricingMode, BigDecimal ratio, BigDecimal fixedTotalPrice) {
-            this.materialType = materialType;
-            this.pricingMode = pricingMode;
-            this.ratio = ratio;
-            this.fixedTotalPrice = fixedTotalPrice;
-        }
     }
 }

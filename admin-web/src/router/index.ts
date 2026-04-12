@@ -4,7 +4,6 @@ import VehiclesView from '../views/VehiclesView.vue'
 import MaterialPricesView from '../views/MaterialPricesView.vue'
 import RecyclePricesView from '../views/RecyclePricesView.vue'
 import DismantleRecordsView from '../views/DismantleRecordsView.vue'
-import MaterialTemplatesView from '../views/MaterialTemplatesView.vue'
 import LoginView from '../views/LoginView.vue'
 import { useAuthStore } from '../stores/auth'
 import MaterialFetchRunsView from '../views/MaterialFetchRunsView.vue'
@@ -22,7 +21,7 @@ const router = createRouter({
     { path: '/material-prices', name: 'material-prices', component: MaterialPricesView },
     { path: '/recycle-prices', name: 'recycle-prices', component: RecyclePricesView },
     { path: '/dismantle-records', name: 'dismantle-records', component: DismantleRecordsView },
-    { path: '/material-templates', name: 'material-templates', component: MaterialTemplatesView },
+    // { path: '/material-templates', name: 'material-templates', component: MaterialTemplatesView },
     { path: '/components', name: 'components', component: () => import('../views/ComponentDictView.vue') },
     { path: '/jobs/material-price', name: 'jobs-material-price', component: MaterialFetchRunsView },
     { path: '/jobs/vehicle', name: 'jobs-vehicle', component: VehicleIngestRunsView },

@@ -6,8 +6,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Page, SameSeriesResponse, VehicleDocument, VehicleImage, VehicleModel, VehicleUpsertRequest } from '../api/types'
 import { createVehicle, deleteVehicle, getSameSeriesVehicles, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
 import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage, getHtmlContent, getSignedUrl } from '../api/vehicleMedia'
-import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
+import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord, updateDismantleRecord } from '../api/dismantle'
 import { listRecycleMaterialTypes } from '../api/material'
+import { listComponents } from '../api/components'
 import type { VehicleDismantleRecord } from '../api/types'
 
 const q = ref('')
@@ -90,8 +91,11 @@ const dismantleRecords = ref<VehicleDismantleRecord[]>([])
 const currentDismantleVehicleId = ref<number | null>(null)
 const currentDismantleCurbWeight = ref<number | null>(null)
 const dismantleFormVisible = ref(false)
+const currentDismantleRecordId = ref<number | null>(null)
 const dismantleMode = ref<'weight' | 'ratio'>('weight')
 const recycleMaterialTypes = ref<string[]>([])
+const partOptions = ref<string[]>([])
+const partItems = ref<any[]>([])
 
 // Mapping for standard types
 const typeLabelMap: Record<string, string> = {
@@ -101,6 +105,29 @@ const typeLabelMap: Record<string, string> = {
   'battery': '电池',
   'plastic': '塑料',
   'rubber': '橡胶'
+}
+
+function parseDismantleDetails(detailsJson?: string | null): any[] {
+  if (!detailsJson) return []
+  try {
+    const parsed = JSON.parse(detailsJson)
+    const items = Array.isArray(parsed) ? parsed : parsed?.items
+    if (!Array.isArray(items)) return []
+    return items.filter((x: any) => x && (typeof x.materialType === 'string' || typeof x.partName === 'string'))
+  } catch {
+    return []
+  }
+}
+
+function getFixedPriceText(record: VehicleDismantleRecord) {
+  const items = parseDismantleDetails(record.detailsJson)
+    .filter(x => x.pricingMode === 'FIXED_TOTAL' && x.category !== 'PART' && (x.totalPrice || 0) > 0)
+    .map(x => `${typeLabelMap[x.materialType] || x.materialType}:${Number(x.totalPrice || 0).toFixed(2)}元`)
+  return items.join('，')
+}
+
+function getPartDetails(record: VehicleDismantleRecord) {
+  return parseDismantleDetails(record.detailsJson).filter(x => x.category === 'PART')
 }
 
 // Compute dynamic columns based on recycleMaterialTypes
@@ -538,12 +565,21 @@ function openDismantle(row: VehicleModel) {
   loadDismantleRecords(row.id)
 }
 
-async function openDismantleForm() {
+async function openDismantleForm(record?: VehicleDismantleRecord) {
+  currentDismantleRecordId.value = record ? record.id : null
+  
   try {
     const types = await listRecycleMaterialTypes()
     recycleMaterialTypes.value = types && types.length > 0 ? types : []
   } catch {
     recycleMaterialTypes.value = []
+  }
+
+  try {
+    const comps = await listComponents()
+    partOptions.value = comps ? comps.map(c => c.name) : []
+  } catch {
+    partOptions.value = ['三元催化', '发动机', '变速箱', '轮毂', '电机', '空调压缩机', '发电机', '音响', '中控', '座椅', '电瓶']
   }
 
   const mapping: Record<string, string> = {
@@ -558,20 +594,60 @@ async function openDismantleForm() {
   dismantleFormItems.value = recycleMaterialTypes.value.map(t => ({
     type: t,
     label: mapping[t] || t,
-    weight: 0,
+    weight: record ? (record as any)[t + 'Weight'] || 0 : 0,
     ratio: 0
   }))
   
-  dismantleFormOther.value = 0
-  dismantleFormRemark.value = ''
+  partItems.value = []
+  
+  if (record && record.detailsJson) {
+    const details = parseDismantleDetails(record.detailsJson)
+    details.filter(d => d.category !== 'PART').forEach(d => {
+      const target = dismantleFormItems.value.find(item => item.type === d.materialType)
+      if (target) {
+        target.weight = d.weightKg || 0
+      }
+    })
+    
+    // Load parts
+    partItems.value = details.filter(d => d.category === 'PART').map(p => ({
+      category: 'PART',
+      partName: p.partName || '',
+      count: p.count || 1,
+      totalPrice: p.totalPrice || 0,
+      pricingMode: 'FIXED_TOTAL',
+      isPremium: p.isPremium || false,
+      remark: p.remark || ''
+    }))
+  }
+  
+  dismantleFormOther.value = record ? record.otherWeight || 0 : 0
+  dismantleFormRemark.value = record ? record.remark || '' : ''
   dismantleMode.value = 'weight'
   dismantleFormVisible.value = true
+}
+
+function addPartItem() {
+  partItems.value.push({
+    category: 'PART',
+    partName: '',
+    count: 1,
+    totalPrice: null,
+    pricingMode: 'FIXED_TOTAL',
+    isPremium: false,
+    remark: ''
+  })
+}
+
+function removePartItem(index: number) {
+  partItems.value.splice(index, 1)
 }
 
 async function submitDismantle() {
   if (!currentDismantleVehicleId.value) return
   
   let steel = 0, aluminum = 0, copper = 0, battery = 0
+  const detailItems: any[] = []
   
   dismantleFormItems.value.forEach(item => {
     let w = item.weight
@@ -583,18 +659,48 @@ async function submitDismantle() {
     else if (item.type === 'aluminum') aluminum = w
     else if (item.type === 'copper') copper = w
     else if (item.type === 'battery') battery = w
+    else if (w > 0) {
+      detailItems.push({
+        category: 'MATERIAL',
+        materialType: item.type,
+        pricingMode: 'WEIGHT',
+        weightKg: w
+      })
+    }
   })
   
+  // Add edited parts from the form
+  partItems.value.forEach(part => {
+    if (part.partName) {
+      detailItems.push({
+        category: 'PART',
+        partName: part.partName,
+        count: Number(part.count) || 1,
+        totalPrice: Number(part.totalPrice) || 0,
+        pricingMode: 'FIXED_TOTAL',
+        isPremium: part.isPremium || false,
+        remark: part.remark || ''
+      })
+    }
+  })
+  
+  const payload = {
+    vehicleId: currentDismantleVehicleId.value,
+    steelWeight: steel,
+    aluminumWeight: aluminum,
+    copperWeight: copper,
+    batteryWeight: battery,
+    otherWeight: dismantleFormOther.value,
+    remark: dismantleFormRemark.value,
+    detailsJson: JSON.stringify({ items: detailItems })
+  }
+  
   try {
-    await createDismantleRecord({
-      vehicleId: currentDismantleVehicleId.value,
-      steelWeight: steel,
-      aluminumWeight: aluminum,
-      copperWeight: copper,
-      batteryWeight: battery,
-      otherWeight: dismantleFormOther.value,
-      remark: dismantleFormRemark.value
-    } as any)
+    if (currentDismantleRecordId.value) {
+      await updateDismantleRecord(currentDismantleRecordId.value, payload as any)
+    } else {
+      await createDismantleRecord(payload as any)
+    }
     ElMessage.success('已保存')
     dismantleFormVisible.value = false
     loadDismantleRecords(currentDismantleVehicleId.value)
@@ -795,11 +901,39 @@ loadFacets()
               <div style="font-weight: 600; margin-bottom: 8px;">当前车型拆解记录</div>
               <el-empty v-if="!row.dismantleRecordsList || row.dismantleRecordsList.length === 0" description="暂无拆解记录" :image-size="40" style="padding: 0" />
               <el-table v-else :data="row.dismantleRecordsList" size="small" border style="margin-bottom: 16px; background: var(--el-bg-color);">
+                <el-table-column type="expand">
+                  <template #default="{ row: subRow }">
+                    <div v-if="getPartDetails(subRow).length > 0" style="padding: 12px 20px; background: #f9fdf9;">
+                      <div style="font-size: 13px; font-weight: 600; color: #67c23a; margin-bottom: 8px;">高价值部件明细</div>
+                      <el-table :data="getPartDetails(subRow)" size="small" border style="width: 100%;">
+                        <el-table-column prop="partName" label="部件名称" width="150">
+                          <template #default="{ row: part }">
+                            <span style="font-weight: 600;">{{ part.partName }}</span>
+                            <el-tag v-if="part.isPremium" size="small" type="warning" style="margin-left: 8px;">个体差异</el-tag>
+                          </template>
+                        </el-table-column>
+                        <el-table-column prop="count" label="数量" width="80" />
+                        <el-table-column prop="totalPrice" label="总计金额" width="120">
+                          <template #default="{ row: part }">
+                            <span :style="{ color: part.isPremium ? '#e6a23c' : '#f56c6c' }">¥{{ part.totalPrice || 0 }}</span>
+                          </template>
+                        </el-table-column>
+                        <el-table-column prop="remark" label="去向/备注" min-width="200" />
+                      </el-table>
+                    </div>
+                    <div v-else style="padding: 10px 20px; color: #999; font-size: 12px;">暂无部件明细</div>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="createdAt" label="录入时间" width="160" />
                 <el-table-column prop="operatorName" label="操作员" width="120" />
                 <el-table-column v-for="col in dynamicDismantleColumns" :key="col.prop" :prop="col.prop" :label="col.label + '(kg)'" width="100" />
                 <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
                 <el-table-column prop="remark" label="备注" show-overflow-tooltip />
+                <el-table-column label="操作" width="100" fixed="right">
+                  <template #default="{ row: subRow }">
+                    <el-button link type="danger" size="small" @click="deleteDismantle(subRow.id)">删除</el-button>
+                  </template>
+                </el-table-column>
               </el-table>
               
               <div v-if="row.sameSeriesCandidatesList && row.sameSeriesCandidatesList.length > 0" style="margin-top: 20px;">
@@ -812,11 +946,39 @@ loadFacets()
                   </div>
                   <el-empty v-if="!candidate.dismantleRecords || candidate.dismantleRecords.length === 0" description="暂无拆解记录" :image-size="40" style="padding: 0" />
                   <el-table v-else :data="candidate.dismantleRecords" size="small" border>
+                    <el-table-column type="expand">
+                      <template #default="{ row: subRow }">
+                        <div v-if="getPartDetails(subRow).length > 0" style="padding: 12px 20px; background: #f9fdf9;">
+                          <div style="font-size: 13px; font-weight: 600; color: #67c23a; margin-bottom: 8px;">高价值部件明细</div>
+                          <el-table :data="getPartDetails(subRow)" size="small" border style="width: 100%;">
+                            <el-table-column prop="partName" label="部件名称" width="150">
+                              <template #default="{ row: part }">
+                                <span style="font-weight: 600;">{{ part.partName }}</span>
+                                <el-tag v-if="part.isPremium" size="small" type="warning" style="margin-left: 8px;">个体差异</el-tag>
+                              </template>
+                            </el-table-column>
+                            <el-table-column prop="count" label="数量" width="80" />
+                            <el-table-column prop="totalPrice" label="总计金额" width="120">
+                              <template #default="{ row: part }">
+                                <span :style="{ color: part.isPremium ? '#e6a23c' : '#f56c6c' }">¥{{ part.totalPrice || 0 }}</span>
+                              </template>
+                            </el-table-column>
+                            <el-table-column prop="remark" label="去向/备注" min-width="200" />
+                          </el-table>
+                        </div>
+                        <div v-else style="padding: 10px 20px; color: #999; font-size: 12px;">暂无部件明细</div>
+                      </template>
+                    </el-table-column>
                     <el-table-column prop="createdAt" label="录入时间" width="160" />
                     <el-table-column prop="operatorName" label="操作员" width="120" />
                     <el-table-column v-for="col in dynamicDismantleColumns" :key="col.prop" :prop="col.prop" :label="col.label + '(kg)'" width="100" />
                     <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
                     <el-table-column prop="remark" label="备注" show-overflow-tooltip />
+                    <el-table-column label="操作" width="100" fixed="right">
+                      <template #default="{ row: subRow }">
+                        <el-button link type="danger" size="small" @click="deleteDismantle(subRow.id)">删除</el-button>
+                      </template>
+                    </el-table-column>
                   </el-table>
                 </div>
               </div>
@@ -1044,6 +1206,32 @@ loadFacets()
     </div>
     
     <el-table v-else :data="dismantleRecords" v-loading="dismantleLoading" stripe border>
+      <el-table-column type="expand">
+        <template #default="{ row }">
+          <div v-if="getPartDetails(row).length > 0" style="padding: 12px 20px; background: #f9fdf9;">
+            <div style="font-size: 13px; font-weight: 600; color: #67c23a; margin-bottom: 8px;">高价值部件明细</div>
+            <el-table :data="getPartDetails(row)" size="small" border style="width: 100%;">
+              <el-table-column prop="partName" label="部件名称" width="150">
+                <template #default="{ row: part }">
+                  <span style="font-weight: 600;">{{ part.partName }}</span>
+                  <el-tag v-if="part.isPremium" size="small" type="warning" style="margin-left: 8px;">个体差异</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="count" label="数量" width="80" />
+              <el-table-column prop="totalPrice" label="总计金额" width="120">
+                <template #default="{ row: part }">
+                  <span :style="{ color: part.isPremium ? '#e6a23c' : '#f56c6c' }">¥{{ part.totalPrice || 0 }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="remark" label="去向/备注" min-width="200" />
+            </el-table>
+            <div v-if="getPartDetails(row).some(p => p.isPremium)" style="font-size: 11px; color: #e6a23c; margin-top: 8px;">
+              注：标注“个体差异”的部件受实车状况或二手件渠道影响，不计入标准保底回收价参考。
+            </div>
+          </div>
+          <div v-else style="padding: 10px 20px; color: #999; font-size: 12px;">暂无部件明细</div>
+        </template>
+      </el-table-column>
       <el-table-column prop="createdAt" label="录入时间" width="160" />
       <el-table-column prop="operatorName" label="操作员" width="120" />
       
@@ -1058,8 +1246,9 @@ loadFacets()
       
       <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
       <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
+          <el-button link type="primary" size="small" @click="openDismantleForm(row)">编辑</el-button>
           <el-button link type="danger" size="small" @click="deleteDismantle(row.id)">删除</el-button>
         </template>
       </el-table-column>
@@ -1099,6 +1288,44 @@ loadFacets()
       <el-form-item label="其他(kg)">
         <el-input-number v-model="dismantleFormOther" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
+
+      <!-- 高价值部件区域 -->
+      <el-divider content-position="left">高价值部件</el-divider>
+      <div v-for="(part, index) in partItems" :key="index" style="margin-bottom: 12px; padding: 12px; background: #f8f9fa; border-radius: 4px; position: relative;">
+        <el-button link type="danger" :icon="Delete" style="position: absolute; right: 8px; top: 8px; padding: 0;" @click="removePartItem(index)"></el-button>
+        
+        <div style="display: flex; gap: 12px; margin-bottom: 12px; margin-right: 24px;">
+          <div style="flex: 2;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">部件名称</div>
+            <el-select v-model="part.partName" placeholder="请选择" style="width: 100%;" filterable allow-create default-first-option>
+              <el-option v-for="opt in partOptions" :key="opt" :label="opt" :value="opt" />
+            </el-select>
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">数量</div>
+            <el-input-number v-model="part.count" :min="1" :step="1" style="width: 100%;" controls-position="right" />
+          </div>
+          <div style="flex: 1.5;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">总计金额(元)</div>
+            <el-input-number v-model="part.totalPrice" :precision="2" :step="100" :min="0" style="width: 100%;" controls-position="right" />
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; color: #666;">个体差异/溢价</span>
+            <el-switch v-model="part.isPremium" inline-prompt active-text="是" inactive-text="否" />
+          </div>
+          <div style="flex: 1;">
+            <el-input v-model="part.remark" placeholder="去向或备注(如：成色好走二手件)" size="small" />
+          </div>
+        </div>
+      </div>
+      
+      <el-button type="primary" plain :icon="Plus" @click="addPartItem" style="width: 100%; margin-bottom: 18px; border-style: dashed;">
+        添加高价值部件
+      </el-button>
+
       <el-form-item label="备注">
         <el-input type="textarea" v-model="dismantleFormRemark" rows="3" />
       </el-form-item>

@@ -58,6 +58,10 @@ export async function deleteVehicle(id: number): Promise<void> {
   await requestJson('DELETE', `/api/admin/vehicles/${id}`)
 }
 
+export async function calculateValuation(id: number): Promise<any> {
+  return requestJson('POST', `/api/valuation/${id}`)
+}
+
 export async function getVehicleFacets(): Promise<VehicleFacets> {
   return requestJson<VehicleFacets>('GET', '/api/admin/vehicles/facets')
 }

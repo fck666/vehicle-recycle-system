@@ -116,23 +116,46 @@
           <text class="currency">¥</text>
           <text class="amount">{{ valuation.totalValue }}</text>
         </view>
-        <view class="breakdown">
-          <view class="breakdown-item">
-            <text class="bd-label">废钢</text>
-            <text class="bd-value">¥{{ valuation.steelValue }}</text>
+        <view style="font-size: 12px; color: #999; text-align: center; margin-bottom: 15px;">综合估值结果</view>
+
+        <view class="dimension-box">
+          <view class="dim-header">
+            <text class="dim-title" style="color: #07c160;">● 精准匹配估值</text>
           </view>
-          <view class="breakdown-item">
-            <text class="bd-label">废铝</text>
-            <text class="bd-value">¥{{ valuation.aluminumValue }}</text>
+          <view v-if="valuation.exactMatch && valuation.exactMatch.recordCount > 0" class="dim-content">
+            <view class="dim-row"><text class="dim-label">平均价:</text><text class="dim-val strong">¥{{ valuation.exactMatch.avgValue }}</text></view>
+            <view class="dim-row"><text class="dim-label">价格区间:</text><text class="dim-val">¥{{ valuation.exactMatch.minValue }} ~ ¥{{ valuation.exactMatch.maxValue }}</text></view>
+            <view class="dim-tip">基于 {{ valuation.exactMatch.recordCount }} 条同产品号/车型的拆解记录计算。</view>
           </view>
-          <view class="breakdown-item">
-            <text class="bd-label">废铜</text>
-            <text class="bd-value">¥{{ valuation.copperValue }}</text>
+          <view v-else class="dim-empty">暂无完全匹配的拆解记录</view>
+        </view>
+
+        <view class="dimension-box">
+          <view class="dim-header">
+            <text class="dim-title" style="color: #1989fa;">● 同车系参考估值 (高置信)</text>
           </view>
-          <view class="breakdown-item">
-            <text class="bd-label">电池</text>
-            <text class="bd-value">¥{{ valuation.batteryValue }}</text>
+          <view v-if="valuation.seriesHighMatch && valuation.seriesHighMatch.recordCount > 0" class="dim-content">
+            <view class="dim-row"><text class="dim-label">平均价:</text><text class="dim-val strong">¥{{ valuation.seriesHighMatch.avgValue }}</text></view>
+            <view class="dim-row"><text class="dim-label">价格区间:</text><text class="dim-val">¥{{ valuation.seriesHighMatch.minValue }} ~ ¥{{ valuation.seriesHighMatch.maxValue }}</text></view>
+            <view class="dim-tip">基于 {{ valuation.seriesHighMatch.recordCount }} 条高置信度的同车系拆解记录计算。</view>
           </view>
+          <view v-else class="dim-empty">暂无同车系的拆解记录 (高置信)</view>
+        </view>
+
+        <view class="dimension-box">
+          <view class="dim-header">
+            <text class="dim-title" style="color: #909399;">● 同车系参考估值 (中置信)</text>
+          </view>
+          <view v-if="valuation.seriesMediumMatch && valuation.seriesMediumMatch.recordCount > 0" class="dim-content">
+            <view class="dim-row"><text class="dim-label">平均价:</text><text class="dim-val strong">¥{{ valuation.seriesMediumMatch.avgValue }}</text></view>
+            <view class="dim-row"><text class="dim-label">价格区间:</text><text class="dim-val">¥{{ valuation.seriesMediumMatch.minValue }} ~ ¥{{ valuation.seriesMediumMatch.maxValue }}</text></view>
+            <view class="dim-tip">基于 {{ valuation.seriesMediumMatch.recordCount }} 条中等置信度的同车系拆解记录计算。</view>
+          </view>
+          <view v-else class="dim-empty">暂无同车系的拆解记录 (中置信)</view>
+        </view>
+
+        <view class="valuation-notice">
+          注：以上估值已按照今日最新大盘行情重新核算拆解记录中的各项材料价值。拆解明细中标注了“个体差异/溢价”的部件未计入统计。
         </view>
       </view>
       <view class="empty-valuation" v-else>
@@ -320,14 +343,24 @@ const previewImage = (index) => {
 .series-score { font-size: 12px; color: #666; }
 .series-reason { font-size: 12px; color: #666; }
 
-.valuation-result { text-align: center; padding: 10px 0; }
-.total-price { margin-bottom: 20px; color: #fa5151; }
-.currency { font-size: 20px; font-weight: bold; }
-.amount { font-size: 32px; font-weight: bold; }
-.breakdown { display: flex; justify-content: space-around; background-color: #f9f9f9; padding: 15px; border-radius: 8px; }
-.breakdown-item { display: flex; flex-direction: column; align-items: center; }
-.bd-label { font-size: 12px; color: #999; margin-bottom: 5px; }
-.bd-value { font-size: 14px; font-weight: bold; color: #333; }
+.valuation-result { background-color: #fdfaf5; padding: 20px; border-radius: 8px; border: 1px solid #fbeedb; }
+.total-price { text-align: center; color: #ff9800; margin-bottom: 5px; }
+.currency { font-size: 20px; margin-right: 5px; font-weight: bold; }
+.amount { font-size: 36px; font-weight: bold; }
+
+.dimension-box { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.dim-header { margin-bottom: 8px; }
+.dim-title { font-size: 14px; font-weight: bold; }
+.dim-content { font-size: 13px; color: #333; }
+.dim-row { display: flex; margin-bottom: 4px; }
+.dim-label { width: 70px; color: #666; }
+.dim-val { flex: 1; }
+.dim-val.strong { font-size: 15px; font-weight: bold; color: #333; }
+.dim-tip { font-size: 11px; color: #999; margin-top: 6px; border-top: 1px dashed #eee; padding-top: 6px; }
+.dim-empty { font-size: 12px; color: #999; text-align: center; padding: 10px 0; }
+
+.valuation-notice { font-size: 11px; color: #ff9800; background: #fff3e0; padding: 8px; border-radius: 4px; line-height: 1.4; margin-top: 10px; }
+.empty-valuation { text-align: center; color: #999; padding: 30px 0; font-size: 14px; }
 
 .login-tip { text-align: center; padding: 20px; color: #07c160; font-size: 14px; }
 

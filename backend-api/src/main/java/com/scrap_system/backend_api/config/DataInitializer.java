@@ -1,13 +1,11 @@
 package com.scrap_system.backend_api.config;
 
 import com.scrap_system.backend_api.model.MaterialPrice;
-import com.scrap_system.backend_api.model.MaterialTemplate;
 import com.scrap_system.backend_api.model.Role;
 import com.scrap_system.backend_api.model.UserAccount;
 import com.scrap_system.backend_api.model.UserRole;
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.MaterialPriceRepository;
-import com.scrap_system.backend_api.repository.MaterialTemplateRepository;
 import com.scrap_system.backend_api.repository.RoleRepository;
 import com.scrap_system.backend_api.repository.UserAccountRepository;
 import com.scrap_system.backend_api.repository.UserRoleRepository;
@@ -28,7 +26,6 @@ import java.util.List;
 public class DataInitializer implements CommandLineRunner {
 
     private final VehicleModelRepository vehicleModelRepository;
-    private final MaterialTemplateRepository materialTemplateRepository;
     private final MaterialPriceRepository materialPriceRepository;
     private final RoleRepository roleRepository;
     private final UserAccountRepository userAccountRepository;
@@ -40,9 +37,6 @@ public class DataInitializer implements CommandLineRunner {
         initAuth();
         if (vehicleModelRepository.count() == 0) {
             initVehicles();
-        }
-        if (materialTemplateRepository.count() == 0) {
-            initTemplates();
         }
         if (materialPriceRepository.count() == 0) {
             initPrices();
@@ -107,24 +101,6 @@ public class DataInitializer implements CommandLineRunner {
         v.setBatteryKwh(batteryKwh);
         v.setVehicleType(vehicleType);
         vehicleModelRepository.save(v);
-    }
-
-    private void initTemplates() {
-        createTemplate("sedan", new BigDecimal("0.68"), new BigDecimal("0.12"), new BigDecimal("0.03"), new BigDecimal("0.85"));
-        createTemplate("ev_sedan", new BigDecimal("0.62"), new BigDecimal("0.14"), new BigDecimal("0.04"), new BigDecimal("0.80"));
-        createTemplate("hatchback", new BigDecimal("0.66"), new BigDecimal("0.11"), new BigDecimal("0.03"), new BigDecimal("0.84"));
-    }
-
-    private void createTemplate(String vehicleType, BigDecimal steel, BigDecimal aluminum, BigDecimal copper, BigDecimal recovery) {
-        MaterialTemplate t = new MaterialTemplate();
-        t.setVehicleType(vehicleType);
-        t.setScopeType("VEHICLE_TYPE");
-        t.setScopeValue(vehicleType == null ? "" : vehicleType.trim());
-        t.setSteelRatio(steel);
-        t.setAluminumRatio(aluminum);
-        t.setCopperRatio(copper);
-        t.setRecoveryRatio(recovery);
-        materialTemplateRepository.save(t);
     }
 
     private void initPrices() {

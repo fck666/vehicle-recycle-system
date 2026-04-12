@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface VehicleDismantleRecordRepository extends JpaRepository<VehicleDismantleRecord, Long> {
     List<VehicleDismantleRecord> findByVehicleIdOrderByCreatedAtDesc(Long vehicleId);
+    List<VehicleDismantleRecord> findByVehicleIdIn(List<Long> vehicleIds);
 }

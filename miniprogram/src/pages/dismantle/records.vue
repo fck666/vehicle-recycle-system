@@ -54,6 +54,9 @@
               <text class="r-label">备注: </text>
               <text class="r-text">{{ item.remark }}</text>
             </view>
+            <view class="actions">
+              <button class="action-btn" size="mini" @click="editRecord(item)">编辑记录</button>
+            </view>
           </view>
         </view>
       </view>
@@ -173,6 +176,12 @@ const hydrateRecordWeights = (record) => {
   return record;
 };
 
+const editRecord = (record) => {
+  uni.navigateTo({
+    url: `/pages/dismantle/entry?vehicleId=${vehicleId.value}&recordId=${record.id}`
+  });
+};
+
 onLoad((options) => {
   vehicleId.value = options.vehicleId;
   if (vehicleId.value) {
@@ -282,4 +291,7 @@ const initData = async () => {
 .premium-tag { font-size: 10px; color: #ff9800; background: #fff3e0; padding: 1px 4px; border-radius: 2px; margin-left: 4px; }
 .premium-price { color: #ff9800; }
 .premium-note { font-size: 11px; color: #ff9800; margin-top: 8px; border-top: 1px dashed #ffe0b2; padding-top: 6px; }
+
+.actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+.action-btn { background: #fff; color: #07c160; border: 1px solid #07c160; font-size: 13px; margin: 0; padding: 0 12px; height: 28px; line-height: 26px; }
 </style>

@@ -1,0 +1,49 @@
+/var/log/syslog
+/var/log/auth.log
+/var/log/kern.log
+{
+    su root adm
+    daily
+    rotate 7
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0640 syslog adm
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP rsyslog.service >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/nginx/*.log
+{
+    su root adm
+    daily
+    rotate 14
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    sharedscripts
+    postrotate
+        [ -s /run/nginx.pid ] && kill -USR1 $(cat /run/nginx.pid) >/dev/null 2>&1 || true
+    endscript
+}
+
+/root/logs/*.log
+/root/vehicle-recycle-system/backend-api/logs/*.log
+{
+    su root root
+    daily
+    rotate 14
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

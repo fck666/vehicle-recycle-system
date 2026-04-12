@@ -2,8 +2,9 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Check, Share } from '@element-plus/icons-vue'
 import type { Page, SameSeriesResponse, VehicleDocument, VehicleImage, VehicleModel, VehicleUpsertRequest } from '../api/types'
-import { createVehicle, deleteVehicle, getSameSeriesVehicles, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, type VehicleSearchParams } from '../api/vehicles'
+import { createVehicle, deleteVehicle, getSameSeriesVehicles, getVehicle, searchVehicles, updateVehicle, getVehicleFacets, calculateValuation, type VehicleSearchParams } from '../api/vehicles'
 import { deleteVehicleDocument, deleteVehicleImage, updateVehicleImage, getHtmlContent, getSignedUrl } from '../api/vehicleMedia'
 import { getDismantleRecords, createDismantleRecord, deleteDismantleRecord } from '../api/dismantle'
 import { getVehicleTemplateMaterials, listRecycleMaterialTypes } from '../api/material'
@@ -723,6 +724,25 @@ function onCurrentChange(v: number) {
   load()
 }
 
+const valuationVisible = ref(false)
+const valuationLoading = ref(false)
+const valuationResult = ref<any>(null)
+const currentValuationVehicle = ref<VehicleModel | null>(null)
+
+async function openValuation(row: VehicleModel) {
+  currentValuationVehicle.value = row
+  valuationVisible.value = true
+  valuationLoading.value = true
+  valuationResult.value = null
+  try {
+    valuationResult.value = await calculateValuation(row.id)
+  } catch (e: any) {
+    ElMessage.error('估值计算失败: ' + e.message)
+  } finally {
+    valuationLoading.value = false
+  }
+}
+
 load()
 loadFacets()
 </script>
@@ -844,10 +864,11 @@ loadFacets()
           <span v-else style="color:var(--el-text-color-placeholder);">无</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openMedia(row)">媒体</el-button>
           <el-button link type="primary" size="small" @click="openDismantle(row)">拆解记录</el-button>
+          <el-button link type="success" size="small" @click="openValuation(row)">参考估值</el-button>
           <el-button v-if="canEdit" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button v-if="canEdit" link type="danger" size="small" @click="onDelete(row)">删除</el-button>
         </template>
@@ -1142,5 +1163,74 @@ loadFacets()
 
   <el-dialog v-model="previewDocVisible" title="文档预览" width="980px">
     <iframe v-if="previewDocUrl" :src="previewDocUrl" style="width:100%;height:70vh;border:none;" />
+  </el-dialog>
+
+  <el-dialog v-model="valuationVisible" title="参考估值" width="800px">
+      <div v-loading="valuationLoading">
+        <div v-if="valuationResult" style="display:flex; flex-direction:column; gap:20px;">
+          <!-- 总体结果 -->
+          <div style="text-align: center; padding: 20px; background: #fdf6ec; border-radius: 8px;">
+            <div style="font-size: 14px; color: #909399; margin-bottom: 8px;">最终参考估值</div>
+            <div style="font-size: 32px; color: #e6a23c; font-weight: bold;">¥ {{ valuationResult.totalValue }}</div>
+          </div>
+          
+          <div style="display: flex; gap: 20px;">
+            <!-- 精准匹配 -->
+            <div style="flex: 1; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px;">
+              <div style="font-size: 14px; font-weight: bold; margin-bottom: 12px; display: flex; align-items: center;">
+                <el-icon color="#67c23a" style="margin-right: 8px;"><Check /></el-icon> 精准匹配估值
+              </div>
+              <div v-if="valuationResult.exactMatch?.recordCount > 0">
+                <div style="margin-bottom: 8px;"><span style="color:#909399;width:70px;display:inline-block">平均价:</span> <strong style="font-size: 18px;">¥{{ valuationResult.exactMatch.avgValue }}</strong></div>
+                <div style="margin-bottom: 8px;"><span style="color:#909399;width:70px;display:inline-block">价格区间:</span> ¥{{ valuationResult.exactMatch.minValue }} ~ ¥{{ valuationResult.exactMatch.maxValue }}</div>
+                <div style="font-size: 12px; color: #909399; margin-top: 12px; border-top: 1px dashed #ebeef5; padding-top: 8px;">
+                  基于 <strong>{{ valuationResult.exactMatch.recordCount }}</strong> 条同产品号/车型的拆解记录计算。
+                </div>
+              </div>
+              <div v-else style="color: #909399; font-size: 13px; text-align: center; padding: 20px 0;">
+                暂无完全匹配的拆解记录
+              </div>
+            </div>
+
+            <!-- 同车系高置信匹配 -->
+            <div style="flex: 1; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px;">
+              <div style="font-size: 14px; font-weight: bold; margin-bottom: 12px; display: flex; align-items: center;">
+                <el-icon color="#409eff" style="margin-right: 8px;"><Share /></el-icon> 同车系参考(高置信)
+              </div>
+              <div v-if="valuationResult.seriesHighMatch?.recordCount > 0">
+                <div style="margin-bottom: 8px;"><span style="color:#909399;width:70px;display:inline-block">平均价:</span> <strong style="font-size: 18px;">¥{{ valuationResult.seriesHighMatch.avgValue }}</strong></div>
+                <div style="margin-bottom: 8px;"><span style="color:#909399;width:70px;display:inline-block">价格区间:</span> ¥{{ valuationResult.seriesHighMatch.minValue }} ~ ¥{{ valuationResult.seriesHighMatch.maxValue }}</div>
+                <div style="font-size: 12px; color: #909399; margin-top: 12px; border-top: 1px dashed #ebeef5; padding-top: 8px;">
+                  基于 <strong>{{ valuationResult.seriesHighMatch.recordCount }}</strong> 条高置信度的同车系记录计算。
+                </div>
+              </div>
+              <div v-else style="color: #909399; font-size: 13px; text-align: center; padding: 20px 0;">
+                暂无同车系拆解记录(高)
+              </div>
+            </div>
+
+            <!-- 同车系中置信匹配 -->
+            <div style="flex: 1; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px;">
+              <div style="font-size: 14px; font-weight: bold; margin-bottom: 12px; display: flex; align-items: center;">
+                <el-icon color="#909399" style="margin-right: 8px;"><Share /></el-icon> 同车系参考(中置信)
+              </div>
+              <div v-if="valuationResult.seriesMediumMatch?.recordCount > 0">
+                <div style="margin-bottom: 8px;"><span style="color:#909399;width:70px;display:inline-block">平均价:</span> <strong style="font-size: 18px;">¥{{ valuationResult.seriesMediumMatch.avgValue }}</strong></div>
+                <div style="margin-bottom: 8px;"><span style="color:#909399;width:70px;display:inline-block">价格区间:</span> ¥{{ valuationResult.seriesMediumMatch.minValue }} ~ ¥{{ valuationResult.seriesMediumMatch.maxValue }}</div>
+                <div style="font-size: 12px; color: #909399; margin-top: 12px; border-top: 1px dashed #ebeef5; padding-top: 8px;">
+                  基于 <strong>{{ valuationResult.seriesMediumMatch.recordCount }}</strong> 条中等置信度的同车系记录计算。
+                </div>
+              </div>
+              <div v-else style="color: #909399; font-size: 13px; text-align: center; padding: 20px 0;">
+                暂无同车系拆解记录(中)
+              </div>
+            </div>
+          </div>
+        
+        <div style="font-size: 12px; color: #909399; background: #f4f4f5; padding: 12px; border-radius: 4px;">
+          <strong>注：</strong> 以上估值已按照今日最新大盘行情(回收价)重新核算拆解记录中的各项材料价值。拆解明细中标注了“个体差异/溢价”的部件未计入统计。
+        </div>
+      </div>
+    </div>
   </el-dialog>
 </template>

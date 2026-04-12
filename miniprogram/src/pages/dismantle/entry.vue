@@ -138,6 +138,7 @@ import { onLoad } from '@dcloudio/uni-app';
 import request from '../../utils/request';
 
 const vehicleId = ref(null);
+const recordId = ref('');
 const vehicle = ref({});
 const mode = ref('weight');
 const dynamicItems = ref([]);
@@ -199,6 +200,9 @@ const typeLabelMap = {
 
 onLoad((options) => {
   vehicleId.value = options.vehicleId;
+  if (options.recordId) {
+    recordId.value = options.recordId;
+  }
   loadVehicle();
   loadRecycleTypes();
   loadSameSeries();
@@ -216,6 +220,55 @@ const loadComponents = async () => {
     }
   } catch (e) {
     PART_OPTIONS.value = ['三元催化', '发动机', '变速箱', '轮毂', '电机', '空调压缩机', '发电机', '音响', '中控', '座椅', '电瓶'];
+  }
+
+  // 6. 如果有 recordId，加载记录并回显
+  if (recordId.value) {
+    try {
+      const recordRes = await request({ url: '/admin/vehicle-dismantle/' + recordId.value });
+      if (recordRes) {
+        // Fill main weights
+        dynamicItems.value.forEach(item => {
+          if (item.type === 'steel') item.value = recordRes.steelWeight || '';
+          else if (item.type === 'aluminum') item.value = recordRes.aluminumWeight || '';
+          else if (item.type === 'copper') item.value = recordRes.copperWeight || '';
+          else if (item.type === 'battery') item.value = recordRes.batteryWeight || '';
+        });
+        formOther.value = recordRes.otherWeight || '';
+        formRemark.value = recordRes.remark || '';
+        
+        // Fill details (parts and other materials)
+        if (recordRes.detailsJson) {
+          const parsed = JSON.parse(recordRes.detailsJson);
+          const items = parsed.items || [];
+          
+          // Extract materials
+          items.filter(i => i.category === 'MATERIAL').forEach(mat => {
+            const dynItem = dynamicItems.value.find(d => d.type === mat.materialType);
+            if (dynItem) {
+              dynItem.value = mode.value === 'ratio' ? mat.ratio : mat.weightKg;
+            }
+            const fixItem = fixedItems.value.find(f => f.type === mat.materialType);
+            if (fixItem) {
+              fixItem.totalPrice = mat.totalPrice;
+            }
+          });
+
+          // Extract parts
+          partItems.value = items.filter(i => i.category === 'PART').map(p => ({
+            category: 'PART',
+            partName: p.partName || '',
+            count: p.count || 1,
+            totalPrice: p.totalPrice || '',
+            pricingMode: 'FIXED_TOTAL',
+            isPremium: p.isPremium || false,
+            remark: p.remark || ''
+          }));
+        }
+      }
+    } catch (e) {
+      uni.showToast({ title: '加载记录失败', icon: 'none' });
+    }
   }
 };
 
@@ -362,9 +415,15 @@ const handleSubmit = () => {
     remark: formRemark.value
   };
 
+  const url = recordId.value 
+    ? `/admin/vehicle-dismantle/${recordId.value}`
+    : '/admin/vehicle-dismantle';
+
+  const method = recordId.value ? 'PUT' : 'POST';
+
   request({
-    url: '/admin/vehicle-dismantle',
-    method: 'POST',
+    url,
+    method,
     data: data
   }).then(() => {
     uni.showToast({ title: '提交成功' });
