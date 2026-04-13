@@ -1198,61 +1198,74 @@ loadFacets()
 
   <el-dialog v-model="dismantleVisible" title="拆解记录" width="900px">
     <div style="margin-bottom:12px;text-align:right;">
-      <el-button type="primary" @click="openDismantleForm">新增记录</el-button>
+      <el-button type="primary" @click="openDismantleForm()">新增记录</el-button>
     </div>
     
     <div v-if="!dismantleRecords || dismantleRecords.length === 0" style="text-align:center;padding:40px;color:var(--el-text-color-secondary);">
       暂无拆解记录
     </div>
     
-    <el-table v-else :data="dismantleRecords" v-loading="dismantleLoading" stripe border>
-      <el-table-column type="expand">
-        <template #default="{ row }">
-          <div v-if="getPartDetails(row).length > 0" style="padding: 12px 20px; background: #f9fdf9;">
-            <div style="font-size: 13px; font-weight: 600; color: #67c23a; margin-bottom: 8px;">高价值部件明细</div>
-            <el-table :data="getPartDetails(row)" size="small" border style="width: 100%;">
-              <el-table-column prop="partName" label="部件名称" width="150">
+    <el-scrollbar v-else max-height="600px" v-loading="dismantleLoading">
+      <div style="display: flex; flex-direction: column; gap: 16px; padding-right: 16px;">
+        <el-card v-for="(record, index) in dismantleRecords" :key="record.id" shadow="hover" style="border-radius: 8px;">
+          <template #header>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="font-weight: 600; font-size: 15px;">
+                记录 #{{ index + 1 }}
+                <el-tag size="small" type="info" style="margin-left: 8px;">{{ record.createdAt }}</el-tag>
+              </div>
+              <div>
+                <span style="font-size: 13px; color: #666; margin-right: 16px;">操作员: {{ record.operatorName || '未知' }}</span>
+                <el-button link type="primary" size="small" @click="openDismantleForm(record as any)">编辑</el-button>
+                <el-button link type="danger" size="small" @click="deleteDismantle(record.id)">删除</el-button>
+              </div>
+            </div>
+          </template>
+
+          <el-descriptions :column="4" size="small" border style="margin-bottom: 16px;">
+            <el-descriptions-item v-for="col in dynamicDismantleColumns" :key="col.prop" :label="col.label + '(kg)'">
+              <span style="font-weight: 600; color: #409eff;">{{ (record as any)[col.prop] || 0 }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="其他(kg)">
+              <span style="font-weight: 600; color: #409eff;">{{ record.otherWeight || 0 }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="固定总价" :span="2">
+              <span style="font-weight: 600; color: #f56c6c;">{{ getFixedPriceText(record) || '无' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="去向/备注" :span="2">
+              {{ record.remark || '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <div v-if="getPartDetails(record).length > 0">
+            <div style="font-size: 13px; font-weight: 600; color: #67c23a; margin-bottom: 8px; display: flex; align-items: center;">
+              高价值部件明细
+            </div>
+            <el-table :data="getPartDetails(record)" size="small" border stripe style="width: 100%;">
+              <el-table-column prop="partName" label="部件名称" width="160">
                 <template #default="{ row: part }">
                   <span style="font-weight: 600;">{{ part.partName }}</span>
                   <el-tag v-if="part.isPremium" size="small" type="warning" style="margin-left: 8px;">个体差异</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="count" label="数量" width="80" />
-              <el-table-column prop="totalPrice" label="总计金额" width="120">
+              <el-table-column prop="count" label="数量" width="80" align="center" />
+              <el-table-column prop="totalPrice" label="总计金额" width="120" align="right">
                 <template #default="{ row: part }">
-                  <span :style="{ color: part.isPremium ? '#e6a23c' : '#f56c6c' }">¥{{ part.totalPrice || 0 }}</span>
+                  <span :style="{ color: part.isPremium ? '#e6a23c' : '#f56c6c', fontWeight: 'bold' }">¥{{ part.totalPrice || 0 }}</span>
                 </template>
               </el-table-column>
               <el-table-column prop="remark" label="去向/备注" min-width="200" />
             </el-table>
-            <div v-if="getPartDetails(row).some(p => p.isPremium)" style="font-size: 11px; color: #e6a23c; margin-top: 8px;">
-              注：标注“个体差异”的部件受实车状况或二手件渠道影响，不计入标准保底回收价参考。
+            <div v-if="getPartDetails(record).some(p => p.isPremium)" style="font-size: 11px; color: #e6a23c; margin-top: 8px;">
+              * 注：标注“个体差异”的部件受实车状况或二手件渠道影响，不计入标准保底回收价参考。
             </div>
           </div>
-          <div v-else style="padding: 10px 20px; color: #999; font-size: 12px;">暂无部件明细</div>
-        </template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="录入时间" width="160" />
-      <el-table-column prop="operatorName" label="操作员" width="120" />
-      
-      <!-- Dynamic columns -->
-      <el-table-column 
-        v-for="col in dynamicDismantleColumns" 
-        :key="col.prop" 
-        :prop="col.prop" 
-        :label="col.label + '(kg)'" 
-        width="100" 
-      />
-      
-      <el-table-column prop="otherWeight" label="其他(kg)" width="100" />
-      <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
-      <el-table-column label="操作" width="120" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openDismantleForm(row)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="deleteDismantle(row.id)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+          <div v-else style="font-size: 12px; color: #999; padding: 8px 0;">
+            暂无高价值部件明细
+          </div>
+        </el-card>
+      </div>
+    </el-scrollbar>
   </el-dialog>
 
   <el-dialog v-model="dismantleFormVisible" title="录入拆解数据" width="550px">

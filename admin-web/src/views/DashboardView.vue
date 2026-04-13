@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { listMaterialPrices, listMaterialTemplates } from '../api/material'
+import { listMaterialPrices } from '../api/material'
 import { searchVehicles } from '../api/vehicles'
 
 const loading = ref(false)
 const vehicles = ref<number>(0)
 const prices = ref<number>(0)
-const templates = ref<number>(0)
 
 async function refresh() {
   loading.value = true
@@ -15,8 +14,6 @@ async function refresh() {
     vehicles.value = v.totalElements
     const p = await listMaterialPrices()
     prices.value = p.length
-    const t = await listMaterialTemplates()
-    templates.value = t.length
   } finally {
     loading.value = false
   }
@@ -39,9 +36,6 @@ refresh()
       </el-col>
       <el-col :span="8">
         <el-statistic title="材料价格条目" :value="prices" />
-      </el-col>
-      <el-col :span="8">
-        <el-statistic title="估值方式(模板)" :value="templates" />
       </el-col>
     </el-row>
   </el-card>

@@ -1,5 +1,5 @@
 import { requestJson, getToken } from './client'
-import type { MaterialPrice, MaterialRatioItem, MaterialSourceConfig, MaterialSourceSuggestResult, MaterialTemplate } from './types'
+import type { MaterialPrice, MaterialSourceConfig, MaterialSourceSuggestResult } from './types'
 
 export async function listMaterialPrices(): Promise<MaterialPrice[]> {
   return requestJson<MaterialPrice[]>('GET', '/api/material-prices')
@@ -58,28 +58,6 @@ export async function getMaterialPriceHistory(type: string, from: string, to: st
   return requestJson<MaterialPrice[]>('GET', `/api/material-prices/${encodeURIComponent(type)}/history?${params.toString()}`)
 }
 
-export async function listMaterialTemplates(): Promise<MaterialTemplate[]> {
-  return requestJson<MaterialTemplate[]>('GET', '/api/material-templates')
-}
-
-export async function getVehicleTemplateMaterials(vehicleId: number): Promise<MaterialRatioItem[]> {
-  return requestJson<MaterialRatioItem[]>('GET', `/api/material-templates/vehicle/${vehicleId}/materials`)
-}
-
-export async function upsertMaterialTemplate(payload: {
-  vehicleType?: string
-  scopeType: 'VEHICLE_TYPE' | 'VEHICLE'
-  scopeValue: string
-  recoveryRatio: number
-  othersPricePerKgOverride?: number
-  materials: MaterialRatioItem[]
-}): Promise<MaterialTemplate> {
-  return requestJson<MaterialTemplate>('POST', '/api/material-templates', payload)
-}
-
-export async function deleteMaterialTemplateById(id: number): Promise<void> {
-  await requestJson('DELETE', `/api/material-templates/id/${id}`)
-}
 
 export async function listMaterialSources(): Promise<MaterialSourceConfig[]> {
   return requestJson<MaterialSourceConfig[]>('GET', '/api/material-sources')
