@@ -201,7 +201,7 @@ const initData = async () => {
     
     // 2. 加载材料类型用于动态列
     try {
-      const types = await request({ url: '/recycle-prices/types' });
+      const types = await request({ url: '/admin/recycle-prices/types' });
       if (types && types.length > 0) {
         dynamicColumns.value = types.map(t => ({
           prop: t + 'Weight',

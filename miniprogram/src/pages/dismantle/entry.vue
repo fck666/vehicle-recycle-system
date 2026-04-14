@@ -304,7 +304,7 @@ const loadVehicle = () => {
 };
 
 const loadRecycleTypes = () => {
-  request({ url: '/recycle-prices/types' }).then((typesRes) => {
+  request({ url: '/admin/recycle-prices/types' }).then((typesRes) => {
     const types = Array.isArray(typesRes) ? typesRes : [];
     dynamicItems.value = types.map(t => ({
       type: t,
