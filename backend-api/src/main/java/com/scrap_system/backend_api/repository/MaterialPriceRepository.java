@@ -2,6 +2,7 @@ package com.scrap_system.backend_api.repository;
 
 import com.scrap_system.backend_api.model.MaterialPrice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -45,6 +46,10 @@ public interface MaterialPriceRepository extends JpaRepository<MaterialPrice, Lo
     // Find latest by category
     Optional<MaterialPrice> findFirstByTypeAndPriceCategoryOrderByEffectiveDateDesc(String type, String priceCategory);
 
-    @Query("SELECT DISTINCT mp.type FROM MaterialPrice mp WHERE mp.priceCategory = :category")
+    @Query("SELECT DISTINCT m.type FROM MaterialPrice m WHERE m.priceCategory = :category")
     List<String> findDistinctTypesByCategory(@Param("category") String category);
+    
+    @Modifying
+    @Query("DELETE FROM MaterialPrice m WHERE m.type = :type AND m.priceCategory = :category")
+    void deleteByTypeAndPriceCategory(@Param("type") String type, @Param("category") String category);
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { MaterialPrice } from '../api/types'
-import { listRecyclePrices, importRecyclePrices, upsertRecyclePrice } from '../api/material'
+import { listRecyclePrices, importRecyclePrices, upsertRecyclePrice, deleteRecyclePriceType } from '../api/material'
 import { useAuthStore } from '../stores/auth'
 import { Download, Upload, Plus, Edit } from '@element-plus/icons-vue'
 
@@ -14,6 +14,7 @@ const auth = useAuthStore()
 const canEdit = computed(() => (auth.me?.roles ?? []).some(r => ['ADMIN', 'OPERATOR'].includes(r)))
 
 const dialogVisible = ref(false)
+const isEditMode = ref(false)
 const submitting = ref(false)
 const form = ref({
   materialName: '',
@@ -43,6 +44,7 @@ async function load() {
 }
 
 function handleAdd() {
+  isEditMode.value = false
   form.value = {
     materialName: '',
     price: 0,
@@ -52,6 +54,7 @@ function handleAdd() {
 }
 
 function handleEdit(row: MaterialPrice) {
+  isEditMode.value = true
   // 将后端的英文 type 转换回中文展示
   const cnName = MATERIAL_NAME_MAP[row.type] || row.type
   form.value = {
@@ -82,6 +85,20 @@ async function handleSubmit() {
     ElMessage.error('保存失败: ' + e.message)
   } finally {
     submitting.value = false
+  }
+}
+
+async function handleDelete(row: MaterialPrice) {
+  try {
+    const cnName = MATERIAL_NAME_MAP[row.type] || row.type
+    await ElMessageBox.confirm(`确定要删除类型为 [${cnName}] 的回收价格吗？`, '提示', { type: 'warning' })
+    await deleteRecyclePriceType(row.type)
+    ElMessage.success('删除成功')
+    load()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败: ' + e.message)
+    }
   }
 }
 
@@ -172,18 +189,19 @@ load()
       <el-table-column prop="effectiveDate" label="生效日期" width="140" />
       <el-table-column prop="fetchedAt" label="导入时间" width="180" />
       <el-table-column prop="sourceName" label="来源" min-width="160" />
-      <el-table-column v-if="canEdit" label="操作" width="100" fixed="right">
+      <el-table-column v-if="canEdit" label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- 手动编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" title="编辑回收价格" width="400px">
+    <el-dialog v-model="dialogVisible" :title="isEditMode ? '编辑回收价格' : '新增材料类型'" width="400px">
       <el-form label-width="100px" @submit.prevent="handleSubmit">
         <el-form-item label="材料类型" required>
-          <el-input v-model="form.materialName" placeholder="例如：废钢 / 铝 / copper" />
+          <el-input v-model="form.materialName" placeholder="例如：废钢 / 铝 / 电池" :disabled="isEditMode" />
         </el-form-item>
         
         <el-form-item label="价格" required>

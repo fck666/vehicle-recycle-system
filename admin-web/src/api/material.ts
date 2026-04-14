@@ -47,6 +47,10 @@ export async function upsertRecyclePrice(payload: { materialName: string; price:
   }
 }
 
+export async function deleteRecyclePriceType(type: string): Promise<void> {
+  return requestJson<void>('DELETE', `/api/admin/recycle-prices/${encodeURIComponent(type)}`)
+}
+
 export async function upsertMaterialPrice(payload: { type: string; pricePerKg: number; currency?: string; unit?: string; effectiveDate?: string }): Promise<MaterialPrice> {
   return requestJson<MaterialPrice>('POST', '/api/material-prices', payload)
 }

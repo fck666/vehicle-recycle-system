@@ -80,6 +80,12 @@ public class RecyclePriceService {
         processAndSave(dto, "MANUAL_ENTRY", true);
     }
 
+    @Transactional
+    public void deleteRecyclePriceType(String type) {
+        // Delete all recycle prices for the given type
+        materialPriceRepository.deleteByTypeAndPriceCategory(type, "RECYCLE");
+    }
+
     private void processAndSave(RecyclePriceImportDto dto, String sourceName, boolean strict) {
         if (dto.getMaterialName() == null || dto.getPrice() == null) {
             if (strict) {
@@ -89,20 +95,10 @@ public class RecyclePriceService {
         }
 
         String materialName = dto.getMaterialName().trim();
+        // Allow arbitrary material names, remove restriction to MATERIAL_NAME_MAP
         String type = MATERIAL_NAME_MAP.get(materialName);
         if (type == null) {
-            String normalized = materialName.toLowerCase();
-            if (MATERIAL_NAME_MAP.containsValue(normalized)) {
-                type = normalized;
-            }
-        }
-
-        if (type == null) {
-            if (strict) {
-                throw new IllegalArgumentException("未知材料类型: " + materialName);
-            }
-            log.warn("Unknown material name: {}", materialName);
-            return;
+            type = materialName; // If not in predefined map, use the name directly
         }
 
         // Calculate price per kg.

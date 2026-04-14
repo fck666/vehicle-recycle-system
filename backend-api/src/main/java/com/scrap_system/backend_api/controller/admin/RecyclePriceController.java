@@ -53,6 +53,17 @@ public class RecyclePriceController {
         }
     }
     
+    @DeleteMapping("/admin/recycle-prices/{type}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> deleteRecyclePriceType(@PathVariable String type) {
+        try {
+            recyclePriceService.deleteRecyclePriceType(type);
+            return ResponseEntity.ok("Delete successful");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Delete failed: " + e.getMessage());
+        }
+    }
+    
     // Public endpoint for miniprogram/frontend
     @GetMapping("/recycle-prices")
     public ResponseEntity<List<MaterialPrice>> getRecyclePricesPublic() {
