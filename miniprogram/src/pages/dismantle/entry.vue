@@ -304,29 +304,14 @@ const loadVehicle = () => {
 };
 
 const loadRecycleTypes = () => {
-  Promise.all([
-    request({ url: '/admin/recycle-prices/types' }).catch(() => []),
-    request({ url: '/material-templates/vehicle/' + vehicleId.value + '/materials' }).catch(() => [])
-  ]).then(([typesRes, materialsRes]) => {
-    const types = typesRes || [];
-    const templateMaterials = materialsRes || [];
-    const weightTypesFromTemplate = templateMaterials
-      .filter(m => (m.pricingMode || 'WEIGHT') === 'WEIGHT')
-      .map(m => m.materialType)
-      .filter(t => t && t !== 'others');
-    const weightTypes = weightTypesFromTemplate.length > 0 ? weightTypesFromTemplate : types;
-    dynamicItems.value = weightTypes.map(t => ({
+  request({ url: '/recycle-prices/types' }).then((typesRes) => {
+    const types = Array.isArray(typesRes) ? typesRes : [];
+    dynamicItems.value = types.map(t => ({
       type: t,
       label: typeLabelMap[t] || t,
       value: ''
     }));
-    fixedItems.value = templateMaterials
-      .filter(m => (m.pricingMode || 'WEIGHT') === 'FIXED_TOTAL')
-      .map(m => ({
-        type: m.materialType,
-        label: typeLabelMap[m.materialType] || m.materialType,
-        totalPrice: ''
-      }));
+    fixedItems.value = [];
   }).catch(() => {
     dynamicItems.value = [];
     fixedItems.value = [];

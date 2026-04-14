@@ -69,4 +69,9 @@ public class RecyclePriceController {
     public ResponseEntity<List<MaterialPrice>> getRecyclePricesPublic() {
         return ResponseEntity.ok(recyclePriceService.getRecyclePrices());
     }
+
+    @GetMapping("/recycle-prices/types")
+    public ResponseEntity<List<String>> getRecycleMaterialTypesPublic() {
+        return ResponseEntity.ok(recyclePriceService.getRecycleMaterialTypes());
+    }
 }
