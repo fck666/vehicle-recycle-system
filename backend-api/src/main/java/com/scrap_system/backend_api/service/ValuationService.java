@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
 
 @Service
@@ -40,6 +42,13 @@ public class ValuationService {
     public ValuationResult calculateValuation(Long vehicleId) {
         VehicleModel vehicle = vehicleModelRepository.findById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
+
+        // Pre-fetch all prices into a map to avoid N+1 queries during loop
+        Map<String, BigDecimal> priceMap = new HashMap<>();
+        List<MaterialPrice> allRecyclePrices = materialPriceRepository.findByPriceCategoryOrderByEffectiveDateDesc("RECYCLE");
+        for (MaterialPrice mp : allRecyclePrices) {
+            priceMap.putIfAbsent(mp.getType(), mp.getPricePerKg()); // putIfAbsent ensures we only keep the latest (first) since it's ordered by desc
+        }
 
         // 1. Get exact match records (Same productNo or just the same vehicle ID if no productNo)
         List<Long> exactMatchVehicleIds = new ArrayList<>();
@@ -74,9 +83,9 @@ public class ValuationService {
         List<VehicleDismantleRecord> seriesMediumRecords = dismantleRecordRepository.findByVehicleIdIn(mediumSeriesVehicleIds);
 
         // 3. Compute dimensions
-        ValuationDimension exactDimension = computeDimension(exactMatchRecords);
-        ValuationDimension seriesHighDimension = computeDimension(seriesHighRecords);
-        ValuationDimension seriesMediumDimension = computeDimension(seriesMediumRecords);
+        ValuationDimension exactDimension = computeDimension(exactMatchRecords, priceMap);
+        ValuationDimension seriesHighDimension = computeDimension(seriesHighRecords, priceMap);
+        ValuationDimension seriesMediumDimension = computeDimension(seriesMediumRecords, priceMap);
 
         BigDecimal totalValue = exactDimension.getRecordCount() > 0 ? exactDimension.getAvgValue() : seriesHighDimension.getAvgValue();
         if (totalValue == null || totalValue.compareTo(BigDecimal.ZERO) == 0) {
@@ -103,7 +112,7 @@ public class ValuationService {
                 .build();
     }
 
-    private ValuationDimension computeDimension(List<VehicleDismantleRecord> records) {
+    private ValuationDimension computeDimension(List<VehicleDismantleRecord> records, Map<String, BigDecimal> priceMap) {
         if (records == null || records.isEmpty()) {
             return emptyDimension();
         }
@@ -114,7 +123,7 @@ public class ValuationService {
         int count = 0;
 
         for (VehicleDismantleRecord record : records) {
-            BigDecimal recordValue = calculateRecordValue(record);
+            BigDecimal recordValue = calculateRecordValue(record, priceMap);
             if (recordValue == null || recordValue.compareTo(BigDecimal.ZERO) <= 0) continue;
 
             sum = sum.add(recordValue);
@@ -145,14 +154,14 @@ public class ValuationService {
                 .build();
     }
 
-    private BigDecimal calculateRecordValue(VehicleDismantleRecord record) {
+    private BigDecimal calculateRecordValue(VehicleDismantleRecord record, Map<String, BigDecimal> priceMap) {
         BigDecimal value = BigDecimal.ZERO;
         
-        value = value.add(safeMultiply(record.getSteelWeight(), getPrice("steel")));
-        value = value.add(safeMultiply(record.getAluminumWeight(), getPrice("aluminum")));
-        value = value.add(safeMultiply(record.getCopperWeight(), getPrice("copper")));
-        value = value.add(safeMultiply(record.getBatteryWeight(), getPrice("battery")));
-        value = value.add(safeMultiply(record.getOtherWeight(), getPrice("others")));
+        value = value.add(safeMultiply(record.getSteelWeight(), priceMap.getOrDefault("steel", BigDecimal.ZERO)));
+        value = value.add(safeMultiply(record.getAluminumWeight(), priceMap.getOrDefault("aluminum", BigDecimal.ZERO)));
+        value = value.add(safeMultiply(record.getCopperWeight(), priceMap.getOrDefault("copper", BigDecimal.ZERO)));
+        value = value.add(safeMultiply(record.getBatteryWeight(), priceMap.getOrDefault("battery", BigDecimal.ZERO)));
+        value = value.add(safeMultiply(record.getOtherWeight(), priceMap.getOrDefault("others", BigDecimal.ZERO)));
 
         if (record.getDetailsJson() != null && !record.getDetailsJson().trim().isEmpty()) {
             try {
@@ -170,7 +179,7 @@ public class ValuationService {
                         } else if ("MATERIAL".equals(category)) {
                             String matType = item.path("materialType").asText("");
                             BigDecimal weight = new BigDecimal(item.path("weightKg").asText("0"));
-                            value = value.add(safeMultiply(weight, getPrice(matType)));
+                            value = value.add(safeMultiply(weight, priceMap.getOrDefault(matType, BigDecimal.ZERO)));
                         }
                     }
                 }

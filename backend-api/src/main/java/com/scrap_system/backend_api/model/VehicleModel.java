@@ -8,6 +8,7 @@ import lombok.Setter;
 import lombok.ToString;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -16,7 +17,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "vehicle_model")
+@Table(name = "vehicle_model", indexes = {
+    @Index(name = "idx_brand", columnList = "brand"),
+    @Index(name = "idx_model", columnList = "model"),
+    @Index(name = "idx_product_id", columnList = "product_id"),
+    @Index(name = "idx_product_no", columnList = "product_no"),
+    @Index(name = "idx_batch_no", columnList = "batch_no")
+})
 @Getter
 @Setter
 public class VehicleModel {
@@ -169,12 +176,14 @@ public class VehicleModel {
     @OrderBy("sortOrder ASC")
     @ToString.Exclude
     @JsonManagedReference
+    @BatchSize(size = 50)
     private List<VehicleImage> images = new ArrayList<>();
 
     @OneToMany(mappedBy = "vehicle", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("createdAt DESC")
     @ToString.Exclude
     @JsonManagedReference
+    @BatchSize(size = 50)
     private List<VehicleDocument> documents = new ArrayList<>();
 
     @PrePersist

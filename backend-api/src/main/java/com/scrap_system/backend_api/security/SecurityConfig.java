@@ -38,6 +38,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/vehicles/image-proxy").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/vehicles/proxy").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/components").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/recycle-prices").permitAll()
                 .requestMatchers("/api/admin/miit-cp-jobs/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/vehicles/lookup").hasAnyRole("ADMIN", "OPERATOR")
                 .requestMatchers("/api/admin/files/upload").hasAnyRole("ADMIN", "OPERATOR")

@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS vehicle_model (
   INDEX idx_vm_model (model),
   INDEX idx_vm_product_id (product_id),
   INDEX idx_vm_product_no (product_no),
-  INDEX idx_vm_release_date (release_date)
+  INDEX idx_vm_release_date (release_date),
+  FULLTEXT INDEX ft_idx_vm_search (brand, model, product_id, product_no) WITH PARSER ngram
 );
 
 CREATE TABLE IF NOT EXISTS material_template (
@@ -331,3 +332,6 @@ INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('雨刷', 200);
 INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('暖风电机', 210);
 INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('天窗', 220);
 INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('油箱', 230);
+
+-- 添加全文索引以支持高效的模糊查询
+ALTER TABLE vehicle_model ADD FULLTEXT INDEX ft_idx_vm_search (brand, model, product_id, product_no) WITH PARSER ngram;
