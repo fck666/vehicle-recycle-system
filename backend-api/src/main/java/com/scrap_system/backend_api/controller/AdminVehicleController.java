@@ -13,8 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
@@ -90,11 +90,17 @@ public class AdminVehicleController {
         
         PageRequest pageable = PageRequest.of(safePage, safeSize, sortObj);
 
-        Specification<VehicleModel> spec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
-                q, brands, manufacturers, vehicleTypes, fuelTypes, null, batchNoMin, batchNoMax, hasDismantleRecord
-        );
-
-        return ResponseEntity.ok(vehicleModelRepository.findAll(spec, pageable));
+        return ResponseEntity.ok(searchPage(
+                q,
+                brands,
+                manufacturers,
+                vehicleTypes,
+                fuelTypes,
+                batchNoMin,
+                batchNoMax,
+                hasDismantleRecord,
+                pageable
+        ));
     }
 
     @GetMapping("/facets")
@@ -356,6 +362,43 @@ public class AdminVehicleController {
 
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    private Page<VehicleModel> searchPage(
+            String q,
+            List<String> brands,
+            List<String> manufacturers,
+            List<String> vehicleTypes,
+            List<String> fuelTypes,
+            Integer batchNoMin,
+            Integer batchNoMax,
+            Boolean hasDismantleRecord,
+            PageRequest pageable
+    ) {
+        Specification<VehicleModel> fuzzySpec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
+                q, brands, manufacturers, vehicleTypes, fuelTypes, null, batchNoMin, batchNoMax, hasDismantleRecord
+        );
+        if (!com.scrap_system.backend_api.specification.VehicleSpecs.isIdentifierLikeQuery(q)) {
+            return vehicleModelRepository.findAll(fuzzySpec, pageable);
+        }
+
+        Specification<VehicleModel> identifierSpec = com.scrap_system.backend_api.specification.VehicleSpecs.withDynamicQuery(
+                q,
+                brands,
+                manufacturers,
+                vehicleTypes,
+                fuelTypes,
+                null,
+                batchNoMin,
+                batchNoMax,
+                hasDismantleRecord,
+                com.scrap_system.backend_api.specification.VehicleSpecs.KeywordSearchMode.IDENTIFIER_PREFIX
+        );
+        Page<VehicleModel> fastPage = vehicleModelRepository.findAll(identifierSpec, pageable);
+        if (fastPage.getTotalElements() > 0) {
+            return fastPage;
+        }
+        return vehicleModelRepository.findAll(fuzzySpec, pageable);
     }
 
     private static String trimOrNull(String s) {
