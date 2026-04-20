@@ -60,6 +60,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import { onReachBottom, onLoad } from '@dcloudio/uni-app';
 import request from '../../../utils/request';
+import { buildVehicleSearchRequest } from './searchParams.mjs';
 
 const vehicleList = ref([]);
 const loading = ref(false);
@@ -91,7 +92,7 @@ onLoad((options) => {
 
 const queryParams = reactive({
   page: 0,
-  size: 10,
+  size: 20,
   q: '',
   brand: ''
 });
@@ -167,23 +168,15 @@ const loadData = (reset = false) => {
   }
   
   loading.value = true;
-  
-  const params = {
+  const searchRequest = buildVehicleSearchRequest({
+    q: queryParams.q,
+    brand: queryParams.brand,
+    hasDismantleRecord: mode.value === 'dismantle_records',
     page: queryParams.page,
-    size: queryParams.size,
-    q: queryParams.q
-  };
-  if (queryParams.brand) {
-    params.brands = queryParams.brand;
-  }
-  if (mode.value === 'dismantle_records') {
-    params.hasDismantleRecord = true;
-  }
+    size: queryParams.size
+  });
 
-  request({
-    url: '/vehicles',
-    data: params
-  }).then(res => {
+  request(searchRequest).then(res => {
     const list = res.content || [];
     if (reset) {
       vehicleList.value = list;
@@ -202,6 +195,7 @@ const loadData = (reset = false) => {
 };
 
 const handleSearch = () => {
+  queryParams.q = (queryParams.q || '').trim();
   recordSearchHistory();
   loadData(true);
 };

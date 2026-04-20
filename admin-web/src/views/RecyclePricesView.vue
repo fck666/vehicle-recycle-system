@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { MaterialPrice } from '../api/types'
-import { listRecyclePrices, importRecyclePrices, upsertRecyclePrice, deleteRecyclePriceType } from '../api/material'
+import { listRecyclePrices, importRecyclePrices, upsertRecyclePrice, deleteRecyclePriceItem } from '../api/material'
 import { useAuthStore } from '../stores/auth'
 import { Download, Upload, Plus, Edit } from '@element-plus/icons-vue'
 
@@ -17,9 +17,11 @@ const dialogVisible = ref(false)
 const isEditMode = ref(false)
 const submitting = ref(false)
 const form = ref({
+  id: null as number | null,
   materialName: '',
   price: 0,
-  unit: '千克'
+  unit: '千克',
+  effectiveDate: ''
 })
 
 // 中文到英文代码的映射（用于前端展示，后端也会做一次映射）
@@ -46,9 +48,11 @@ async function load() {
 function handleAdd() {
   isEditMode.value = false
   form.value = {
+    id: null,
     materialName: '',
     price: 0,
-    unit: '千克'
+    unit: '千克',
+    effectiveDate: ''
   }
   dialogVisible.value = true
 }
@@ -58,9 +62,11 @@ function handleEdit(row: MaterialPrice) {
   // 将后端的英文 type 转换回中文展示
   const cnName = MATERIAL_NAME_MAP[row.type] || row.type
   form.value = {
+    id: row.id,
     materialName: cnName,
     price: row.pricePerKg,
-    unit: '千克' // 后端返回的通常已经是转换后的千克价格
+    unit: '千克', // 后端返回的通常已经是转换后的千克价格
+    effectiveDate: row.effectiveDate || ''
   }
   dialogVisible.value = true
 }
@@ -91,8 +97,8 @@ async function handleSubmit() {
 async function handleDelete(row: MaterialPrice) {
   try {
     const cnName = MATERIAL_NAME_MAP[row.type] || row.type
-    await ElMessageBox.confirm(`确定要删除类型为 [${cnName}] 的回收价格吗？`, '提示', { type: 'warning' })
-    await deleteRecyclePriceType(row.type)
+    await ElMessageBox.confirm(`确定要删除 [${cnName}] 在 ${row.effectiveDate || '-'} 的这条回收价格吗？`, '提示', { type: 'warning' })
+    await deleteRecyclePriceItem(row.id)
     ElMessage.success('删除成功')
     load()
   } catch (e: any) {

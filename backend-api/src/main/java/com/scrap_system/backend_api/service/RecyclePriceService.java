@@ -27,6 +27,9 @@ import java.util.Map;
 public class RecyclePriceService {
 
     private final MaterialPriceRepository materialPriceRepository;
+    private static final List<String> DEFAULT_RECYCLE_TYPES = List.of(
+            "steel", "aluminum", "copper", "battery", "plastic", "rubber"
+    );
 
     private static final Map<String, String> MATERIAL_NAME_MAP = new HashMap<>();
 
@@ -44,7 +47,8 @@ public class RecyclePriceService {
     }
 
     public List<String> getRecycleMaterialTypes() {
-        return materialPriceRepository.findDistinctTypesByCategory("RECYCLE");
+        List<String> types = materialPriceRepository.findDistinctTypesByCategory("RECYCLE");
+        return (types == null || types.isEmpty()) ? DEFAULT_RECYCLE_TYPES : types;
     }
 
     @Transactional
@@ -78,6 +82,16 @@ public class RecyclePriceService {
     @Transactional
     public void saveRecyclePrice(RecyclePriceImportDto dto) {
         processAndSave(dto, "MANUAL_ENTRY", true);
+    }
+
+    @Transactional
+    public void deleteRecyclePriceItem(Long id) {
+        MaterialPrice existing = materialPriceRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("记录不存在"));
+        if (!"RECYCLE".equals(existing.getPriceCategory())) {
+            throw new IllegalArgumentException("仅支持删除回收价格记录");
+        }
+        materialPriceRepository.deleteById(id);
     }
 
     @Transactional
@@ -122,18 +136,27 @@ public class RecyclePriceService {
              pricePerKg = inputPrice;
         }
 
-        // Effective date is removed from template, defaults to today (immediate effect).
-        LocalDate effectiveDate = LocalDate.now();
-        
-        // Find existing record by type, date and category=RECYCLE
-        MaterialPrice existing = materialPriceRepository.findByTypeAndEffectiveDateAndPriceCategory(type, effectiveDate, "RECYCLE")
-                .orElse(new MaterialPrice());
+        LocalDate effectiveDate = dto.getEffectiveDate() != null ? dto.getEffectiveDate() : LocalDate.now();
+
+        MaterialPrice existing;
+        if (dto.getId() != null) {
+            existing = materialPriceRepository.findById(dto.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("记录不存在"));
+            if (!"RECYCLE".equals(existing.getPriceCategory())) {
+                throw new IllegalArgumentException("仅支持编辑回收价格记录");
+            }
+        } else {
+            existing = materialPriceRepository.findByTypeAndEffectiveDateAndPriceCategory(type, effectiveDate, "RECYCLE")
+                    .orElse(new MaterialPrice());
+        }
 
         existing.setType(type);
         existing.setPricePerKg(pricePerKg);
         existing.setUnit("kg"); // Stored unit is always kg
         existing.setCurrency("CNY");
-        existing.setEffectiveDate(effectiveDate);
+        existing.setEffectiveDate(dto.getId() != null && dto.getEffectiveDate() == null
+                ? existing.getEffectiveDate()
+                : effectiveDate);
         existing.setFetchedAt(java.time.LocalDateTime.now());
         existing.setSourceName(sourceName);
         existing.setPriceCategory("RECYCLE");

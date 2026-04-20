@@ -202,7 +202,7 @@ const initData = async () => {
     
     // 2. 加载材料类型用于动态列
     try {
-      const types = await request({ url: '/admin/recycle-prices/types', silent: true });
+      const types = await request({ url: '/recycle-prices/types', silent: true });
       dynamicColumns.value = buildDynamicColumns(types, typeLabelMap);
     } catch (e) {
       dynamicColumns.value = buildDynamicColumns([], typeLabelMap);

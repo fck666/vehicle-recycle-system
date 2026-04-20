@@ -30,7 +30,7 @@ export async function importRecyclePrices(file: File): Promise<void> {
   }
 }
 
-export async function upsertRecyclePrice(payload: { materialName: string; price: number; unit?: string }): Promise<void> {
+export async function upsertRecyclePrice(payload: { id?: number | null; materialName: string; price: number; unit?: string; effectiveDate?: string }): Promise<void> {
   const token = getToken()
   const res = await fetch('/api/admin/recycle-prices', {
     method: 'POST',
@@ -47,8 +47,8 @@ export async function upsertRecyclePrice(payload: { materialName: string; price:
   }
 }
 
-export async function deleteRecyclePriceType(type: string): Promise<void> {
-  return requestJson<void>('DELETE', `/api/admin/recycle-prices/${encodeURIComponent(type)}`)
+export async function deleteRecyclePriceItem(id: number): Promise<void> {
+  return requestJson<void>('DELETE', `/api/admin/recycle-prices/item/${encodeURIComponent(String(id))}`)
 }
 
 export async function upsertMaterialPrice(payload: { type: string; pricePerKg: number; currency?: string; unit?: string; effectiveDate?: string }): Promise<MaterialPrice> {

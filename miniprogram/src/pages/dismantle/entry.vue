@@ -304,7 +304,7 @@ const loadVehicle = () => {
 };
 
 const loadRecycleTypes = () => {
-  request({ url: '/admin/recycle-prices/types', silent: true }).then((typesRes) => {
+  request({ url: '/recycle-prices/types', silent: true }).then((typesRes) => {
     dynamicItems.value = buildDynamicItems(typesRes, typeLabelMap);
     fixedItems.value = [];
   }).catch(() => {

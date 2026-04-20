@@ -63,11 +63,28 @@ public class RecyclePriceController {
             return ResponseEntity.badRequest().body("Delete failed: " + e.getMessage());
         }
     }
+
+    @DeleteMapping("/admin/recycle-prices/item/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> deleteRecyclePriceItem(@PathVariable Long id) {
+        try {
+            recyclePriceService.deleteRecyclePriceItem(id);
+            return ResponseEntity.ok("Delete successful");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Delete failed: " + e.getMessage());
+        }
+    }
     
     // Public endpoint for miniprogram/frontend
     @GetMapping("/recycle-prices")
     public ResponseEntity<List<MaterialPrice>> getRecyclePricesPublic() {
         return ResponseEntity.ok(recyclePriceService.getRecyclePrices());
+    }
+
+    // Keep a public type list for mini program pages that only need material keys.
+    @GetMapping("/recycle-prices/types")
+    public ResponseEntity<List<String>> getRecycleMaterialTypesPublic() {
+        return ResponseEntity.ok(recyclePriceService.getRecycleMaterialTypes());
     }
 
 }

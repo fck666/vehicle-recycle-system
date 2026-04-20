@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @RestController
@@ -15,11 +16,20 @@ import java.util.List;
 public class ComponentDictController {
 
     private final ComponentDictRepository componentDictRepository;
+    private static final List<String> DEFAULT_COMPONENT_NAMES = List.of(
+            "三元催化", "发动机", "变速箱", "轮毂", "电机", "空调压缩机", "发电机", "音响", "中控", "座椅",
+            "电瓶", "方向盘", "转向机", "水箱", "水箱盖", "风扇", "ABS", "录音机", "仪表", "雨刷", "暖风电机", "天窗", "油箱"
+    );
 
     // Public endpoint for miniprogram to get enabled components
     @GetMapping("/components")
     public ResponseEntity<List<ComponentDict>> getEnabledComponents() {
-        return ResponseEntity.ok(componentDictRepository.findByIsEnabledTrueOrderBySortOrderAscIdAsc());
+        try {
+            List<ComponentDict> components = componentDictRepository.findByIsEnabledTrueOrderBySortOrderAscIdAsc();
+            return ResponseEntity.ok((components == null || components.isEmpty()) ? buildDefaultComponents() : components);
+        } catch (RuntimeException ex) {
+            return ResponseEntity.ok(buildDefaultComponents());
+        }
     }
 
     // Admin endpoints
@@ -70,5 +80,17 @@ public class ComponentDictController {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();
+    }
+
+    private List<ComponentDict> buildDefaultComponents() {
+        List<ComponentDict> defaults = new ArrayList<>();
+        for (int i = 0; i < DEFAULT_COMPONENT_NAMES.size(); i++) {
+            ComponentDict item = new ComponentDict();
+            item.setName(DEFAULT_COMPONENT_NAMES.get(i));
+            item.setSortOrder((i + 1) * 10);
+            item.setIsEnabled(true);
+            defaults.add(item);
+        }
+        return defaults;
     }
 }
