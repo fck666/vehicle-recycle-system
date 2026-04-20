@@ -125,6 +125,7 @@
 import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import request from '../../utils/request';
+import { buildDynamicColumns } from './dismantleDefaults.mjs';
 
 const vehicleId = ref(null);
 const vehicle = ref(null);
@@ -201,15 +202,10 @@ const initData = async () => {
     
     // 2. 加载材料类型用于动态列
     try {
-      const types = await request({ url: '/admin/recycle-prices/types' });
-      if (types && types.length > 0) {
-        dynamicColumns.value = types.map(t => ({
-          prop: t + 'Weight',
-          label: typeLabelMap[t] || t
-        }));
-      }
+      const types = await request({ url: '/admin/recycle-prices/types', silent: true });
+      dynamicColumns.value = buildDynamicColumns(types, typeLabelMap);
     } catch (e) {
-      // ignore
+      dynamicColumns.value = buildDynamicColumns([], typeLabelMap);
     }
     
     // 3. 加载当前车辆拆解记录
@@ -217,14 +213,14 @@ const initData = async () => {
     records.value = ownRecords.map(hydrateRecordWeights);
     
     // 4. 加载同车系并筛选高置信
-    const sameSeriesRes = await request({ url: '/vehicles/' + vehicleId.value + '/same-series' });
+    const sameSeriesRes = await request({ url: '/vehicles/' + vehicleId.value + '/same-series', silent: true });
     if (sameSeriesRes && sameSeriesRes.candidates) {
       const highCandidates = sameSeriesRes.candidates.filter(c => c.confidenceLevel === 'HIGH');
       // 5. 加载每个高置信候选的拆解记录
       for (let i = 0; i < highCandidates.length; i++) {
         const c = highCandidates[i];
         try {
-          const candidateRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+          const candidateRecords = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId, silent: true }) || [];
           c.dismantleRecords = candidateRecords.map(hydrateRecordWeights);
         } catch (e) {
           c.dismantleRecords = [];

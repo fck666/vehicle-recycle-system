@@ -50,12 +50,16 @@ const request = (options) => {
           clearAuthAndRedirectToLogin();
           reject(res);
         } else {
-          uni.showToast({ title: res.data.message || '请求失败', icon: 'none' });
+          if (!options.silent) {
+            uni.showToast({ title: res.data.message || '请求失败', icon: 'none' });
+          }
           reject(res);
         }
       },
       fail: (err) => {
-        uni.showToast({ title: '网络请求失败', icon: 'none' });
+        if (!options.silent) {
+          uni.showToast({ title: '网络请求失败', icon: 'none' });
+        }
         reject(err);
       }
     });

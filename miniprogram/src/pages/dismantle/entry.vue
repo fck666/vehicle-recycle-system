@@ -136,6 +136,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import request from '../../utils/request';
+import { buildDynamicItems, DEFAULT_PART_NAMES } from './dismantleDefaults.mjs';
 
 const vehicleId = ref(null);
 const recordId = ref('');
@@ -211,15 +212,14 @@ onLoad((options) => {
 
 const loadComponents = async () => {
   try {
-    const components = await request({ url: '/components' }) || [];
+    const components = await request({ url: '/components', silent: true }) || [];
     if (components && components.length > 0) {
       PART_OPTIONS.value = components.map(c => c.name);
     } else {
-      // 兜底数据
-      PART_OPTIONS.value = ['三元催化', '发动机', '变速箱', '轮毂', '电机', '空调压缩机', '发电机', '音响', '中控', '座椅', '电瓶'];
+      PART_OPTIONS.value = DEFAULT_PART_NAMES;
     }
   } catch (e) {
-    PART_OPTIONS.value = ['三元催化', '发动机', '变速箱', '轮毂', '电机', '空调压缩机', '发电机', '音响', '中控', '座椅', '电瓶'];
+    PART_OPTIONS.value = DEFAULT_PART_NAMES;
   }
 
   // 6. 如果有 recordId，加载记录并回显
@@ -274,13 +274,13 @@ const loadComponents = async () => {
 
 const loadSameSeries = async () => {
   try {
-    const res = await request({ url: '/vehicles/' + vehicleId.value + '/same-series' });
+    const res = await request({ url: '/vehicles/' + vehicleId.value + '/same-series', silent: true });
     if (res && res.candidates) {
       const highCandidates = res.candidates.filter(c => c.confidenceLevel === 'HIGH');
       for (let i = 0; i < highCandidates.length; i++) {
         const c = highCandidates[i];
         try {
-          const records = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId }) || [];
+          const records = await request({ url: '/admin/vehicle-dismantle/vehicle/' + c.vehicleId, silent: true }) || [];
           c.dismantleRecords = records.map(hydrateRecordWeights);
         } catch (e) {
           c.dismantleRecords = [];
@@ -304,16 +304,11 @@ const loadVehicle = () => {
 };
 
 const loadRecycleTypes = () => {
-  request({ url: '/admin/recycle-prices/types' }).then((typesRes) => {
-    const types = Array.isArray(typesRes) ? typesRes : [];
-    dynamicItems.value = types.map(t => ({
-      type: t,
-      label: typeLabelMap[t] || t,
-      value: ''
-    }));
+  request({ url: '/admin/recycle-prices/types', silent: true }).then((typesRes) => {
+    dynamicItems.value = buildDynamicItems(typesRes, typeLabelMap);
     fixedItems.value = [];
   }).catch(() => {
-    dynamicItems.value = [];
+    dynamicItems.value = buildDynamicItems([], typeLabelMap);
     fixedItems.value = [];
   });
 };
