@@ -3,17 +3,16 @@ package com.scrap_system.backend_api.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scrap_system.backend_api.dto.SameSeriesCandidateDto;
-import com.scrap_system.backend_api.dto.SameSeriesResponse;
 import com.scrap_system.backend_api.dto.ValuationDimension;
 import com.scrap_system.backend_api.dto.ValuationResult;
 import com.scrap_system.backend_api.model.MaterialPrice;
 import com.scrap_system.backend_api.model.ValuationRecord;
-import com.scrap_system.backend_api.model.VehicleDismantleRecord;
-import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.MaterialPriceRepository;
 import com.scrap_system.backend_api.repository.ValuationRecordRepository;
 import com.scrap_system.backend_api.repository.VehicleDismantleRecordRepository;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
+import com.scrap_system.backend_api.repository.projection.VehicleSeriesSnapshotView;
+import com.scrap_system.backend_api.repository.projection.VehicleValuationSourceView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,9 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +41,7 @@ public class ValuationService {
 
     @Transactional
     public ValuationResult calculateValuation(Long vehicleId) {
-        VehicleModel vehicle = vehicleModelRepository.findById(vehicleId)
+        VehicleSeriesSnapshotView vehicle = vehicleModelRepository.findSeriesSnapshotById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
 
         // Pre-fetch all prices into a map to avoid N+1 queries during loop
@@ -53,16 +54,15 @@ public class ValuationService {
         // 1. Get exact match records (Same productNo or just the same vehicle ID if no productNo)
         List<Long> exactMatchVehicleIds = new ArrayList<>();
         if (vehicle.getProductNo() != null && !vehicle.getProductNo().trim().isEmpty()) {
-            exactMatchVehicleIds = vehicleModelRepository.findAllByProductNoOrderByIdDesc(vehicle.getProductNo())
-                    .stream().map(VehicleModel::getId).toList();
+            exactMatchVehicleIds = vehicleModelRepository.findIdsByProductNoOrderByIdDesc(vehicle.getProductNo());
         } else {
             exactMatchVehicleIds.add(vehicle.getId());
         }
-        List<VehicleDismantleRecord> exactMatchRecords = dismantleRecordRepository.findByVehicleIdIn(exactMatchVehicleIds);
+        List<VehicleValuationSourceView> exactMatchRecords = loadValuationSources(exactMatchVehicleIds);
 
         // 2. Get same series match records using SameSeriesService
-        List<Long> highSeriesVehicleIds = new ArrayList<>();
-        List<Long> mediumSeriesVehicleIds = new ArrayList<>();
+        Set<Long> highSeriesVehicleIds = new LinkedHashSet<>();
+        Set<Long> mediumSeriesVehicleIds = new LinkedHashSet<>();
         
         sameSeriesService.findSameSeries(vehicle.getId(), 4, 50).ifPresent(response -> {
             for (SameSeriesCandidateDto candidate : response.getCandidates()) {
@@ -75,12 +75,10 @@ public class ValuationService {
         });
 
         // Always include current vehicle in high confidence pool if not already there
-        if (!highSeriesVehicleIds.contains(vehicle.getId())) {
-            highSeriesVehicleIds.add(0, vehicle.getId());
-        }
+        highSeriesVehicleIds.add(vehicle.getId());
 
-        List<VehicleDismantleRecord> seriesHighRecords = dismantleRecordRepository.findByVehicleIdIn(highSeriesVehicleIds);
-        List<VehicleDismantleRecord> seriesMediumRecords = dismantleRecordRepository.findByVehicleIdIn(mediumSeriesVehicleIds);
+        List<VehicleValuationSourceView> seriesHighRecords = loadValuationSources(new ArrayList<>(highSeriesVehicleIds));
+        List<VehicleValuationSourceView> seriesMediumRecords = loadValuationSources(new ArrayList<>(mediumSeriesVehicleIds));
 
         // 3. Compute dimensions
         ValuationDimension exactDimension = computeDimension(exactMatchRecords, priceMap);
@@ -112,7 +110,14 @@ public class ValuationService {
                 .build();
     }
 
-    private ValuationDimension computeDimension(List<VehicleDismantleRecord> records, Map<String, BigDecimal> priceMap) {
+    private List<VehicleValuationSourceView> loadValuationSources(List<Long> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) {
+            return List.of();
+        }
+        return dismantleRecordRepository.findValuationSourcesByVehicleIdIn(vehicleIds);
+    }
+
+    private ValuationDimension computeDimension(List<VehicleValuationSourceView> records, Map<String, BigDecimal> priceMap) {
         if (records == null || records.isEmpty()) {
             return emptyDimension();
         }
@@ -122,7 +127,7 @@ public class ValuationService {
         BigDecimal max = null;
         int count = 0;
 
-        for (VehicleDismantleRecord record : records) {
+        for (VehicleValuationSourceView record : records) {
             BigDecimal recordValue = calculateRecordValue(record, priceMap);
             if (recordValue == null || recordValue.compareTo(BigDecimal.ZERO) <= 0) continue;
 
@@ -154,7 +159,7 @@ public class ValuationService {
                 .build();
     }
 
-    private BigDecimal calculateRecordValue(VehicleDismantleRecord record, Map<String, BigDecimal> priceMap) {
+    private BigDecimal calculateRecordValue(VehicleValuationSourceView record, Map<String, BigDecimal> priceMap) {
         BigDecimal value = BigDecimal.ZERO;
         
         value = value.add(safeMultiply(record.getSteelWeight(), priceMap.getOrDefault("steel", BigDecimal.ZERO)));
@@ -193,12 +198,6 @@ public class ValuationService {
     private BigDecimal safeMultiply(BigDecimal weight, BigDecimal price) {
         if (weight == null || price == null) return BigDecimal.ZERO;
         return weight.multiply(price);
-    }
-
-    private BigDecimal getPrice(String type) {
-        return materialPriceRepository.findFirstByTypeAndPriceCategoryOrderByEffectiveDateDesc(type, "RECYCLE")
-                .map(MaterialPrice::getPricePerKg)
-                .orElse(BigDecimal.ZERO);
     }
     
     public List<ValuationRecord> getHistory(Long vehicleId) {

@@ -14,14 +14,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
 
 @Service
 @Profile("prod | local-prod")
 @Slf4j
 public class OssFileStorageService implements FileStorageService {
+
+    private static final long PRESIGNED_URL_SAFETY_WINDOW_MS = 60_000L;
+
+    private final ConcurrentHashMap<String, CachedSignedUrl> presignedUrlCache = new ConcurrentHashMap<>();
 
     @Value("${aliyun.oss.endpoint:${spring.aliyun.oss.endpoint:}}")
     private String endpoint;
@@ -146,9 +149,16 @@ public class OssFileStorageService implements FileStorageService {
             return url;
         }
 
+        String cacheKey = key + "|" + expirationSeconds;
+        CachedSignedUrl cached = presignedUrlCache.get(cacheKey);
+        long now = System.currentTimeMillis();
+        if (cached != null && cached.expiresAtMs() > now) {
+            return cached.url();
+        }
+
         OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
         try {
-            java.util.Date expiration = new java.util.Date(System.currentTimeMillis() + expirationSeconds * 1000L);
+            java.util.Date expiration = new java.util.Date(now + expirationSeconds * 1000L);
             
             GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucketName, key);
             request.setExpiration(expiration);
@@ -156,55 +166,14 @@ public class OssFileStorageService implements FileStorageService {
             // Set response headers to force inline display
             ResponseHeaderOverrides responseHeaders = new ResponseHeaderOverrides();
             responseHeaders.setContentDisposition("inline");
-            
-            // The Content-Type should be set correctly during upload
-            // Fix: Check and auto-fix Content-Type if needed
-            String expectedType = getContentType(key);
-            if (expectedType != null) {
-                try {
-                    ObjectMetadata meta = ossClient.getObjectMetadata(bucketName, key);
-                    String currentType = meta.getContentType();
-                    
-                    boolean needFix = false;
-                    
-                    // Strict check for HTML files
-                    if (key.toLowerCase().endsWith(".html") || key.toLowerCase().endsWith(".htm")) {
-                        if (!"text/html".equalsIgnoreCase(currentType)) {
-                            needFix = true;
-                            expectedType = "text/html";
-                        }
-                    } else {
-                        // General check for other types
-                        needFix = currentType == null || currentType.trim().isEmpty() 
-                                || "application/octet-stream".equalsIgnoreCase(currentType);
-                    }
-
-                    if (needFix) {
-                        log.info("Auto-fixing Content-Type for key={} from '{}' to '{}'", key, currentType, expectedType);
-                        
-                        // Copy object to itself with new metadata
-                        ObjectMetadata newMeta = new ObjectMetadata();
-                        newMeta.setContentType(expectedType);
-                        // Also explicitly set Content-Disposition to inline in metadata to be safe
-                        newMeta.setContentDisposition("inline");
-                        
-                        // Preserve original user metadata if needed (optional, here we prioritize fixing type)
-                        
-                        CopyObjectRequest copyRequest = new CopyObjectRequest(bucketName, key, bucketName, key);
-                        copyRequest.setNewObjectMetadata(newMeta);
-                        
-                        ossClient.copyObject(copyRequest);
-                        log.info("Successfully fixed Content-Type for key={}", key);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to auto-fix Content-Type for key={}", key, e);
-                }
-            }
-            
             request.setResponseHeaders(responseHeaders);
             
             java.net.URL signedUrl = ossClient.generatePresignedUrl(request);
-            return normalizeForMiniProgram(signedUrl.toString());
+            String normalized = normalizeForMiniProgram(signedUrl.toString());
+            long ttlMs = Math.max(1_000L, expirationSeconds * 1000L - PRESIGNED_URL_SAFETY_WINDOW_MS);
+            presignedUrlCache.put(cacheKey, new CachedSignedUrl(normalized, now + ttlMs));
+            evictExpiredPresignedUrls(now);
+            return normalized;
         } catch (Exception e) {
             log.error("Failed to generate presigned URL", e);
             return url;
@@ -323,5 +292,15 @@ public class OssFileStorageService implements FileStorageService {
         String base = url.substring(0, queryIndex + 1);
         String query = url.substring(queryIndex + 1).replace("+", "%2B");
         return base + query;
+    }
+
+    private void evictExpiredPresignedUrls(long now) {
+        if (presignedUrlCache.size() < 1024) {
+            return;
+        }
+        presignedUrlCache.entrySet().removeIf(entry -> entry.getValue().expiresAtMs() <= now);
+    }
+
+    private record CachedSignedUrl(String url, long expiresAtMs) {
     }
 }

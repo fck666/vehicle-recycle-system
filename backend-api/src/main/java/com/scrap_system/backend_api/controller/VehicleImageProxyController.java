@@ -1,5 +1,7 @@
 package com.scrap_system.backend_api.controller;
 
+import com.scrap_system.backend_api.service.FileStorageService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -17,8 +19,11 @@ import java.net.URI;
 @RestController
 @RequestMapping({"/api/vehicle-images", "/api/vehicles"})
 @Slf4j
+@RequiredArgsConstructor
 public class VehicleImageProxyController {
     private static final String OSS_ALLOWED_HOST = "xhy-car-files.oss-cn-beijing.aliyuncs.com";
+
+    private final FileStorageService fileStorageService;
 
     @GetMapping("/proxy")
     public ResponseEntity<byte[]> proxy(@RequestParam String source) {
@@ -42,7 +47,10 @@ public class VehicleImageProxyController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
-            HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+            String fetchUrl = isSignedUrl(uri)
+                    ? source
+                    : fileStorageService.generatePresignedUrl(source, 600);
+            HttpURLConnection connection = (HttpURLConnection) URI.create(fetchUrl).toURL().openConnection();
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(10000);
             connection.setRequestMethod("GET");
@@ -62,7 +70,6 @@ public class VehicleImageProxyController {
             try (InputStream in = connection.getInputStream()) {
                 bytes = in.readAllBytes();
             }
-            log.info("Image proxy success, host={}, bytes={}", host, bytes.length);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CACHE_CONTROL, "public, max-age=300")
                     .contentType(MediaType.parseMediaType(contentType))
@@ -71,5 +78,15 @@ public class VehicleImageProxyController {
             log.warn("Image proxy failed, source={}", source, e);
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         }
+    }
+
+    private static boolean isSignedUrl(URI uri) {
+        String query = uri.getQuery();
+        if (query == null || query.isBlank()) {
+            return false;
+        }
+        return query.contains("OSSAccessKeyId=")
+                || query.contains("Signature=")
+                || query.contains("x-oss-signature=");
     }
 }

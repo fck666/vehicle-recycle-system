@@ -1,6 +1,7 @@
 package com.scrap_system.backend_api.repository;
 
 import com.scrap_system.backend_api.model.VehicleModel;
+import com.scrap_system.backend_api.repository.projection.VehicleSeriesSnapshotView;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -18,6 +19,14 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
     Optional<VehicleModel> findByProductNo(String productNo);
     List<VehicleModel> findAllByProductIdOrderByIdDesc(String productId);
     List<VehicleModel> findAllByProductNoOrderByIdDesc(String productNo);
+
+    @Query("""
+            select v.id
+            from VehicleModel v
+            where v.productNo = :productNo
+            order by v.id desc
+            """)
+    List<Long> findIdsByProductNoOrderByIdDesc(@Param("productNo") String productNo);
 
     List<VehicleModel> findByBatchNo(Integer batchNo);
     List<VehicleModel> findByBatchNoBetween(Integer start, Integer end);
@@ -57,7 +66,37 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
     List<Object[]> findIdsWithDuplicateSourceUrls();
 
     @Query("""
-            select v from VehicleModel v
+            select
+                v.id as id,
+                v.brand as brand,
+                v.model as model,
+                v.modelYear as modelYear,
+                v.manufacturerName as manufacturerName,
+                v.vehicleType as vehicleType,
+                v.fuelType as fuelType,
+                v.curbWeight as curbWeight,
+                v.wheelbaseMm as wheelbaseMm,
+                v.trademark as trademark,
+                v.productNo as productNo
+            from VehicleModel v
+            where v.id = :id
+            """)
+    Optional<VehicleSeriesSnapshotView> findSeriesSnapshotById(@Param("id") Long id);
+
+    @Query("""
+            select
+                v.id as id,
+                v.brand as brand,
+                v.model as model,
+                v.modelYear as modelYear,
+                v.manufacturerName as manufacturerName,
+                v.vehicleType as vehicleType,
+                v.fuelType as fuelType,
+                v.curbWeight as curbWeight,
+                v.wheelbaseMm as wheelbaseMm,
+                v.trademark as trademark,
+                v.productNo as productNo
+            from VehicleModel v
             where v.id <> :targetId
               and lower(v.vehicleType) = lower(:vehicleType)
               and lower(v.fuelType) = lower(:fuelType)
@@ -68,7 +107,7 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
                    or lower(coalesce(v.manufacturerName, '')) = lower(:manufacturerName)
               )
             """)
-    List<VehicleModel> findSameSeriesPool(
+    List<VehicleSeriesSnapshotView> findSameSeriesPoolSnapshots(
             @Param("targetId") Long targetId,
             @Param("manufacturerName") String manufacturerName,
             @Param("vehicleType") String vehicleType,

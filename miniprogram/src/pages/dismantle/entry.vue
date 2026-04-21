@@ -298,7 +298,12 @@ const goToCandidate = (id) => {
 };
 
 const loadVehicle = () => {
-  request({ url: '/vehicles/' + vehicleId.value }).then(res => {
+  request({
+    url: '/vehicles/' + vehicleId.value,
+    data: {
+      signMedia: false
+    }
+  }).then(res => {
     vehicle.value = res || {};
   });
 };

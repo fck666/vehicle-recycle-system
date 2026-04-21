@@ -198,7 +198,12 @@ const initData = async () => {
   loading.value = true;
   try {
     // 1. 加载车辆基本信息
-    vehicle.value = await request({ url: '/vehicles/' + vehicleId.value });
+    vehicle.value = await request({
+      url: '/vehicles/' + vehicleId.value,
+      data: {
+        signMedia: false
+      }
+    });
     
     // 2. 加载材料类型用于动态列
     try {

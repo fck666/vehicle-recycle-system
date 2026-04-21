@@ -230,7 +230,12 @@ const checkLogin = () => {
 };
 
 const loadDetail = () => {
-  request({ url: '/vehicles/' + vehicleId.value })
+  request({
+    url: '/vehicles/' + vehicleId.value,
+    data: {
+      signMedia: false
+    }
+  })
     .then(res => {
       vehicle.value = res;
       loadSameSeries();

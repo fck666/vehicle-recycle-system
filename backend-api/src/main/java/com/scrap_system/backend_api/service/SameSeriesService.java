@@ -2,7 +2,7 @@ package com.scrap_system.backend_api.service;
 
 import com.scrap_system.backend_api.dto.SameSeriesCandidateDto;
 import com.scrap_system.backend_api.dto.SameSeriesResponse;
-import com.scrap_system.backend_api.model.VehicleModel;
+import com.scrap_system.backend_api.repository.projection.VehicleSeriesSnapshotView;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,40 +23,41 @@ public class SameSeriesService {
 
     @Transactional(readOnly = true)
     public Optional<SameSeriesResponse> findSameSeries(Long vehicleId, int yearWindow, int limit) {
-        Optional<VehicleModel> targetOpt = vehicleModelRepository.findById(vehicleId);
+        Optional<VehicleSeriesSnapshot> targetOpt = vehicleModelRepository.findSeriesSnapshotById(vehicleId)
+                .map(VehicleSeriesSnapshot::fromView);
         if (targetOpt.isEmpty()) {
             return Optional.empty();
         }
-        VehicleModel target = targetOpt.get();
-        int minYear = target.getModelYear() - yearWindow;
-        int maxYear = target.getModelYear() + yearWindow;
-        List<VehicleModel> pool = vehicleModelRepository.findSameSeriesPool(
-                target.getId(),
-                target.getManufacturerName(),
-                target.getVehicleType(),
-                target.getFuelType(),
+        VehicleSeriesSnapshot target = targetOpt.get();
+        int minYear = target.modelYear() - yearWindow;
+        int maxYear = target.modelYear() + yearWindow;
+        List<VehicleSeriesSnapshot> pool = vehicleModelRepository.findSameSeriesPoolSnapshots(
+                target.id(),
+                target.manufacturerName(),
+                target.vehicleType(),
+                target.fuelType(),
                 minYear,
                 maxYear
-        );
+        ).stream().map(VehicleSeriesSnapshot::fromView).toList();
 
         String targetSeries = extractSeriesName(target);
-        String targetModelPrefix = modelPrefix(target.getModel(), 6);
+        String targetModelPrefix = modelPrefix(target.model(), 6);
         List<SameSeriesCandidateDto> candidates = new ArrayList<>();
-        for (VehicleModel c : pool) {
+        for (VehicleSeriesSnapshot c : pool) {
             ScoreResult scoreResult = score(target, c, targetSeries, targetModelPrefix);
             if (scoreResult.score < 58) {
                 continue;
             }
             candidates.add(new SameSeriesCandidateDto(
-                    c.getId(),
-                    c.getBrand(),
-                    c.getModel(),
-                    c.getModelYear(),
-                    c.getManufacturerName(),
-                    c.getVehicleType(),
-                    c.getFuelType(),
-                    c.getCurbWeight(),
-                    c.getWheelbaseMm(),
+                    c.id(),
+                    c.brand(),
+                    c.model(),
+                    c.modelYear(),
+                    c.manufacturerName(),
+                    c.vehicleType(),
+                    c.fuelType(),
+                    c.curbWeight(),
+                    c.wheelbaseMm(),
                     extractSeriesName(c),
                     scoreResult.score,
                     scoreResult.confidenceLevel,
@@ -83,7 +84,7 @@ public class SameSeriesService {
         }
 
         return Optional.of(new SameSeriesResponse(
-                target.getId(),
+                target.id(),
                 targetSeries,
                 yearWindow,
                 candidates.size(),
@@ -93,7 +94,7 @@ public class SameSeriesService {
         ));
     }
 
-    private ScoreResult score(VehicleModel target, VehicleModel candidate, String targetSeries, String targetModelPrefix) {
+    private ScoreResult score(VehicleSeriesSnapshot target, VehicleSeriesSnapshot candidate, String targetSeries, String targetModelPrefix) {
         int score = 0;
         List<String> reasons = new ArrayList<>();
         String candidateSeries = extractSeriesName(candidate);
@@ -106,7 +107,7 @@ public class SameSeriesService {
             reasons.add("车系名称高相似");
         }
 
-        String candidatePrefix = modelPrefix(candidate.getModel(), 6);
+        String candidatePrefix = modelPrefix(candidate.model(), 6);
         if (!targetModelPrefix.isBlank() && targetModelPrefix.equals(candidatePrefix)) {
             score += 25;
             reasons.add("公告型号前缀一致");
@@ -118,21 +119,21 @@ public class SameSeriesService {
             reasons.add("公告型号前缀高相似");
         }
 
-        if (equalsIgnoreCase(target.getManufacturerName(), candidate.getManufacturerName())) {
+        if (equalsIgnoreCase(target.manufacturerName(), candidate.manufacturerName())) {
             score += 15;
             reasons.add("生产企业一致");
         }
-        if (equalsIgnoreCase(target.getVehicleType(), candidate.getVehicleType())) {
+        if (equalsIgnoreCase(target.vehicleType(), candidate.vehicleType())) {
             score += 8;
             reasons.add("车辆类型一致");
         }
-        if (equalsIgnoreCase(target.getFuelType(), candidate.getFuelType())) {
+        if (equalsIgnoreCase(target.fuelType(), candidate.fuelType())) {
             score += 8;
             reasons.add("能源类型一致");
         }
 
-        if (target.getModelYear() != null && candidate.getModelYear() != null) {
-            int yearDiff = Math.abs(target.getModelYear() - candidate.getModelYear());
+        if (target.modelYear() != null && candidate.modelYear() != null) {
+            int yearDiff = Math.abs(target.modelYear() - candidate.modelYear());
             if (yearDiff <= 1) {
                 score += 8;
                 reasons.add("年款非常接近");
@@ -145,13 +146,13 @@ public class SameSeriesService {
             }
         }
 
-        int weightBonus = closeBonus(target.getCurbWeight(), candidate.getCurbWeight(), new BigDecimal("60"), new BigDecimal("120"), 8, 4);
+        int weightBonus = closeBonus(target.curbWeight(), candidate.curbWeight(), new BigDecimal("60"), new BigDecimal("120"), 8, 4);
         if (weightBonus > 0) {
             score += weightBonus;
             reasons.add("整备质量接近");
         }
 
-        int wheelbaseBonus = closeBonus(target.getWheelbaseMm(), candidate.getWheelbaseMm(), 20, 50, 8, 4);
+        int wheelbaseBonus = closeBonus(target.wheelbaseMm(), candidate.wheelbaseMm(), 20, 50, 8, 4);
         if (wheelbaseBonus > 0) {
             score += wheelbaseBonus;
             reasons.add("轴距接近");
@@ -189,16 +190,16 @@ public class SameSeriesService {
         return 0;
     }
 
-    private static String extractSeriesName(VehicleModel vehicle) {
-        String trademark = normalizeSeriesPart(vehicle.getTrademark());
+    private static String extractSeriesName(VehicleSeriesSnapshot vehicle) {
+        String trademark = normalizeSeriesPart(vehicle.trademark());
         if (!trademark.isBlank()) {
             return trademark;
         }
-        String brand = normalizeSeriesPart(vehicle.getBrand());
+        String brand = normalizeSeriesPart(vehicle.brand());
         if (!brand.isBlank()) {
             return brand;
         }
-        String modelPrefix = modelPrefix(vehicle.getModel(), 6);
+        String modelPrefix = modelPrefix(vehicle.model(), 6);
         return modelPrefix;
     }
 
@@ -241,5 +242,35 @@ public class SameSeriesService {
     }
 
     private record ScoreResult(int score, String confidenceLevel, List<String> reasons) {
+    }
+
+    private record VehicleSeriesSnapshot(
+            Long id,
+            String brand,
+            String model,
+            Integer modelYear,
+            String manufacturerName,
+            String vehicleType,
+            String fuelType,
+            BigDecimal curbWeight,
+            Integer wheelbaseMm,
+            String trademark,
+            String productNo
+    ) {
+        private static VehicleSeriesSnapshot fromView(VehicleSeriesSnapshotView view) {
+            return new VehicleSeriesSnapshot(
+                    view.getId(),
+                    view.getBrand(),
+                    view.getModel(),
+                    view.getModelYear(),
+                    view.getManufacturerName(),
+                    view.getVehicleType(),
+                    view.getFuelType(),
+                    view.getCurbWeight(),
+                    view.getWheelbaseMm(),
+                    view.getTrademark(),
+                    view.getProductNo()
+            );
+        }
     }
 }

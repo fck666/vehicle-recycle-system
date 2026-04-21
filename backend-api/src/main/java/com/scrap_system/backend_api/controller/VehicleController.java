@@ -83,10 +83,14 @@ public class VehicleController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<VehicleModel> get(@PathVariable Long id) {
-        log.info("Vehicle detail request, vehicleId={}, storageService={}", id, fileStorageService.getClass().getSimpleName());
+    public ResponseEntity<VehicleModel> get(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "true") boolean signMedia
+    ) {
+        log.debug("Vehicle detail request, vehicleId={}, signMedia={}, storageService={}",
+                id, signMedia, fileStorageService.getClass().getSimpleName());
         return vehicleModelRepository.findById(id)
-                .map(this::attachPresignedUrls)
+                .map(vehicle -> signMedia ? attachPresignedUrls(vehicle) : vehicle)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -108,15 +112,7 @@ public class VehicleController {
         if (vehicle.getImages() != null) {
             vehicle.getImages().forEach(image -> {
                 if (image.getImageUrl() != null && !image.getImageUrl().trim().isEmpty()) {
-                    String originalUrl = image.getImageUrl();
-                    String presignedUrl = fileStorageService.generatePresignedUrl(originalUrl, 3600);
-                    image.setImageUrl(presignedUrl);
-                    boolean signed = presignedUrl.contains("OSSAccessKeyId=") && presignedUrl.contains("Signature=");
-                    log.info("Vehicle image url processed, vehicleId={}, changed={}, signed={}",
-                            vehicle.getId(), !originalUrl.equals(presignedUrl), signed);
-                    if (originalUrl.equals(presignedUrl)) {
-                        log.warn("Image URL unchanged after presign, vehicleId={}, url={}", vehicle.getId(), originalUrl);
-                    }
+                    image.setImageUrl(fileStorageService.generatePresignedUrl(image.getImageUrl(), 3600));
                 }
             });
         }
