@@ -1,12 +1,16 @@
 const DEV_BASE_URL = 'http://localhost:8090/api';
 const PROD_BASE_URL = 'https://api.xhyscrapcar.com/api';
+const WECHAT_DEV_USE_REMOTE_API = true;
 
 let BASE_URL = DEV_BASE_URL;
 
 // #ifdef MP-WEIXIN
 const accountInfo = uni.getAccountInfoSync ? uni.getAccountInfoSync() : {};
 const envVersion = accountInfo.miniProgram ? accountInfo.miniProgram.envVersion : 'develop';
-BASE_URL = envVersion === 'trial' || envVersion === 'release' ? PROD_BASE_URL : DEV_BASE_URL;
+BASE_URL =
+  envVersion === 'trial' || envVersion === 'release'
+    ? PROD_BASE_URL
+    : (WECHAT_DEV_USE_REMOTE_API ? PROD_BASE_URL : DEV_BASE_URL);
 // #endif
 
 // #ifndef MP-WEIXIN
