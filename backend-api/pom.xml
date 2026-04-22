@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>17</java.version>
+		<maven.enforcer.plugin.version>3.6.2</maven.enforcer.plugin.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -121,6 +122,34 @@
 
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>${maven.enforcer.plugin.version}</version>
+				<executions>
+					<execution>
+						<id>enforce-temurin-17</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireJavaVersion>
+									<version>[17,18)</version>
+									<message>backend-api 构建要求 JDK 17.x。请切换到 Eclipse Temurin 17。</message>
+								</requireJavaVersion>
+								<requireJavaVendor>
+									<message>backend-api 构建要求 Eclipse Temurin 17。请确认 JAVA_HOME 指向 Temurin 17，且 java.vendor=Eclipse Adoptium。</message>
+									<includes>
+										<include>Eclipse Adoptium</include>
+									</includes>
+								</requireJavaVendor>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>

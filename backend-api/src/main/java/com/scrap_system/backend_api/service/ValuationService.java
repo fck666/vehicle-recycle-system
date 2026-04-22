@@ -2,6 +2,7 @@ package com.scrap_system.backend_api.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.scrap_system.backend_api.config.PerformanceLogSupport;
 import com.scrap_system.backend_api.dto.SameSeriesCandidateDto;
 import com.scrap_system.backend_api.dto.ValuationDimension;
 import com.scrap_system.backend_api.dto.ValuationResult;
@@ -38,32 +39,45 @@ public class ValuationService {
     private final VehicleDismantleRecordRepository dismantleRecordRepository;
     private final SameSeriesService sameSeriesService;
     private final ObjectMapper objectMapper;
+    private final PerformanceLogSupport performanceLogSupport;
 
     @Transactional
     public ValuationResult calculateValuation(Long vehicleId) {
+        long totalStart = System.nanoTime();
+
+        long loadVehicleStart = System.nanoTime();
         VehicleSeriesSnapshotView vehicle = vehicleModelRepository.findSeriesSnapshotById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found: " + vehicleId));
+        long loadVehicleMs = performanceLogSupport.elapsedMillis(loadVehicleStart);
 
         // Pre-fetch all prices into a map to avoid N+1 queries during loop
+        long loadPriceStart = System.nanoTime();
         Map<String, BigDecimal> priceMap = new HashMap<>();
         List<MaterialPrice> allRecyclePrices = materialPriceRepository.findByPriceCategoryOrderByEffectiveDateDesc("RECYCLE");
         for (MaterialPrice mp : allRecyclePrices) {
             priceMap.putIfAbsent(mp.getType(), mp.getPricePerKg()); // putIfAbsent ensures we only keep the latest (first) since it's ordered by desc
         }
+        long loadPriceMs = performanceLogSupport.elapsedMillis(loadPriceStart);
 
         // 1. Get exact match records (Same productNo or just the same vehicle ID if no productNo)
+        long exactIdStart = System.nanoTime();
         List<Long> exactMatchVehicleIds = new ArrayList<>();
         if (vehicle.getProductNo() != null && !vehicle.getProductNo().trim().isEmpty()) {
             exactMatchVehicleIds = vehicleModelRepository.findIdsByProductNoOrderByIdDesc(vehicle.getProductNo());
         } else {
             exactMatchVehicleIds.add(vehicle.getId());
         }
+        long exactIdMs = performanceLogSupport.elapsedMillis(exactIdStart);
+
+        long exactRecordStart = System.nanoTime();
         List<VehicleValuationSourceView> exactMatchRecords = loadValuationSources(exactMatchVehicleIds);
+        long exactRecordMs = performanceLogSupport.elapsedMillis(exactRecordStart);
 
         // 2. Get same series match records using SameSeriesService
         Set<Long> highSeriesVehicleIds = new LinkedHashSet<>();
         Set<Long> mediumSeriesVehicleIds = new LinkedHashSet<>();
-        
+
+        long sameSeriesStart = System.nanoTime();
         sameSeriesService.findSameSeries(vehicle.getId(), 4, 50).ifPresent(response -> {
             for (SameSeriesCandidateDto candidate : response.getCandidates()) {
                 if ("HIGH".equals(candidate.getConfidenceLevel())) {
@@ -73,17 +87,25 @@ public class ValuationService {
                 }
             }
         });
+        long sameSeriesMs = performanceLogSupport.elapsedMillis(sameSeriesStart);
 
         // Always include current vehicle in high confidence pool if not already there
         highSeriesVehicleIds.add(vehicle.getId());
 
+        long highRecordStart = System.nanoTime();
         List<VehicleValuationSourceView> seriesHighRecords = loadValuationSources(new ArrayList<>(highSeriesVehicleIds));
+        long highRecordMs = performanceLogSupport.elapsedMillis(highRecordStart);
+
+        long mediumRecordStart = System.nanoTime();
         List<VehicleValuationSourceView> seriesMediumRecords = loadValuationSources(new ArrayList<>(mediumSeriesVehicleIds));
+        long mediumRecordMs = performanceLogSupport.elapsedMillis(mediumRecordStart);
 
         // 3. Compute dimensions
+        long computeStart = System.nanoTime();
         ValuationDimension exactDimension = computeDimension(exactMatchRecords, priceMap);
         ValuationDimension seriesHighDimension = computeDimension(seriesHighRecords, priceMap);
         ValuationDimension seriesMediumDimension = computeDimension(seriesMediumRecords, priceMap);
+        long computeMs = performanceLogSupport.elapsedMillis(computeStart);
 
         BigDecimal totalValue = exactDimension.getRecordCount() > 0 ? exactDimension.getAvgValue() : seriesHighDimension.getAvgValue();
         if (totalValue == null || totalValue.compareTo(BigDecimal.ZERO) == 0) {
@@ -100,14 +122,42 @@ public class ValuationService {
         record.setCopperValue(BigDecimal.ZERO);
         record.setBatteryValue(BigDecimal.ZERO);
         record.setDetailsJson("{\"source\":\"DATA_DRIVEN\"}");
-        valuationRecordRepository.save(record);
 
-        return ValuationResult.builder()
+        long persistStart = System.nanoTime();
+        valuationRecordRepository.save(record);
+        long persistMs = performanceLogSupport.elapsedMillis(persistStart);
+
+        ValuationResult result = ValuationResult.builder()
                 .totalValue(totalValue)
                 .exactMatch(exactDimension)
                 .seriesHighMatch(seriesHighDimension)
                 .seriesMediumMatch(seriesMediumDimension)
                 .build();
+
+        long totalMs = performanceLogSupport.elapsedMillis(totalStart);
+        performanceLogSupport.logStep(
+                log,
+                "valuation vehicleId=" + vehicleId,
+                totalMs,
+                "loadVehicleMs=" + loadVehicleMs
+                        + ", loadPriceMs=" + loadPriceMs
+                        + ", exactIdMs=" + exactIdMs
+                        + ", exactRecordMs=" + exactRecordMs
+                        + ", sameSeriesMs=" + sameSeriesMs
+                        + ", highRecordMs=" + highRecordMs
+                        + ", mediumRecordMs=" + mediumRecordMs
+                        + ", computeMs=" + computeMs
+                        + ", persistMs=" + persistMs
+                        + ", exactVehicleIds=" + exactMatchVehicleIds.size()
+                        + ", exactRecords=" + exactMatchRecords.size()
+                        + ", highVehicleIds=" + highSeriesVehicleIds.size()
+                        + ", highRecords=" + seriesHighRecords.size()
+                        + ", mediumVehicleIds=" + mediumSeriesVehicleIds.size()
+                        + ", mediumRecords=" + seriesMediumRecords.size()
+                        + ", totalValue=" + totalValue
+        );
+
+        return result;
     }
 
     private List<VehicleValuationSourceView> loadValuationSources(List<Long> vehicleIds) {

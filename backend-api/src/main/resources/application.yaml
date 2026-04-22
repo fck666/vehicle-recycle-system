@@ -32,6 +32,12 @@ server:
   port: 8090
 
 app:
+  performance:
+    enabled: true
+    always-log: false
+    request-warn-threshold-ms: 800
+    step-warn-threshold-ms: 300
+    proxy-warn-threshold-ms: 500
   security:
     jwt:
       secret: ${JWT_SECRET:r5l0h4jdVSUTwC6AHU9vUiQ8xWOi80I69we3x2wWxHjdD3ZbNYaEfGWECjD4ebKlbgJr-OXAwhltfxrNbqIWyw}

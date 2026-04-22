@@ -1,5 +1,6 @@
 package com.scrap_system.backend_api.security;
 
+import com.scrap_system.backend_api.config.ApiPerformanceLoggingFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final ApiPerformanceLoggingFilter apiPerformanceLoggingFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -75,6 +77,7 @@ public class SecurityConfig {
         );
 
         http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterAfter(apiPerformanceLoggingFilter, JwtAuthFilter.class);
         return http.build();
     }
 

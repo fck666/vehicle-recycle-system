@@ -1,10 +1,12 @@
 package com.scrap_system.backend_api.service;
 
+import com.scrap_system.backend_api.config.PerformanceLogSupport;
 import com.scrap_system.backend_api.dto.SameSeriesCandidateDto;
 import com.scrap_system.backend_api.dto.SameSeriesResponse;
-import com.scrap_system.backend_api.repository.projection.VehicleSeriesSnapshotView;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
+import com.scrap_system.backend_api.repository.projection.VehicleSeriesSnapshotView;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,35 +16,67 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SameSeriesService {
 
+    private static final AtomicBoolean INDEXED_FALLBACK_LOGGED = new AtomicBoolean(false);
+
     private final VehicleModelRepository vehicleModelRepository;
+    private final PerformanceLogSupport performanceLogSupport;
 
     @Transactional(readOnly = true)
     public Optional<SameSeriesResponse> findSameSeries(Long vehicleId, int yearWindow, int limit) {
+        long totalStart = System.nanoTime();
+
+        long loadTargetStart = System.nanoTime();
         Optional<VehicleSeriesSnapshot> targetOpt = vehicleModelRepository.findSeriesSnapshotById(vehicleId)
                 .map(VehicleSeriesSnapshot::fromView);
+        long loadTargetMs = performanceLogSupport.elapsedMillis(loadTargetStart);
         if (targetOpt.isEmpty()) {
             return Optional.empty();
         }
         VehicleSeriesSnapshot target = targetOpt.get();
         int minYear = target.modelYear() - yearWindow;
         int maxYear = target.modelYear() + yearWindow;
-        List<VehicleSeriesSnapshot> pool = vehicleModelRepository.findSameSeriesPoolSnapshots(
-                target.id(),
-                target.manufacturerName(),
-                target.vehicleType(),
-                target.fuelType(),
-                minYear,
-                maxYear
-        ).stream().map(VehicleSeriesSnapshot::fromView).toList();
+
+        long poolQueryStart = System.nanoTime();
+        boolean indexedQuery = true;
+        List<VehicleSeriesSnapshot> pool;
+        try {
+            pool = vehicleModelRepository.findSameSeriesPoolSnapshotsIndexed(
+                    target.id(),
+                    normalizeQueryKey(target.manufacturerName()),
+                    normalizeQueryKey(target.vehicleType()),
+                    normalizeQueryKey(target.fuelType()),
+                    minYear,
+                    maxYear
+            ).stream().map(VehicleSeriesSnapshot::fromView).toList();
+        } catch (RuntimeException e) {
+            indexedQuery = false;
+            if (INDEXED_FALLBACK_LOGGED.compareAndSet(false, true)) {
+                log.warn("Same series indexed query unavailable, fallback enabled: {}: {}",
+                        e.getClass().getSimpleName(), e.getMessage());
+            }
+            pool = vehicleModelRepository.findSameSeriesPoolSnapshotsFallback(
+                    target.id(),
+                    target.manufacturerName(),
+                    target.vehicleType(),
+                    target.fuelType(),
+                    minYear,
+                    maxYear
+            ).stream().map(VehicleSeriesSnapshot::fromView).toList();
+        }
+        long poolQueryMs = performanceLogSupport.elapsedMillis(poolQueryStart);
 
         String targetSeries = extractSeriesName(target);
         String targetModelPrefix = modelPrefix(target.model(), 6);
         List<SameSeriesCandidateDto> candidates = new ArrayList<>();
+
+        long scoreStart = System.nanoTime();
         for (VehicleSeriesSnapshot c : pool) {
             ScoreResult scoreResult = score(target, c, targetSeries, targetModelPrefix);
             if (scoreResult.score < 58) {
@@ -64,7 +98,9 @@ public class SameSeriesService {
                     scoreResult.reasons
             ));
         }
+        long scoreMs = performanceLogSupport.elapsedMillis(scoreStart);
 
+        long sortStart = System.nanoTime();
         candidates.sort(Comparator
                 .comparing(SameSeriesCandidateDto::getScore, Comparator.reverseOrder())
                 .thenComparing(SameSeriesCandidateDto::getModelYear, Comparator.reverseOrder())
@@ -72,6 +108,7 @@ public class SameSeriesService {
         if (candidates.size() > limit) {
             candidates = new ArrayList<>(candidates.subList(0, limit));
         }
+        long sortMs = performanceLogSupport.elapsedMillis(sortStart);
 
         int high = 0;
         int medium = 0;
@@ -83,7 +120,7 @@ public class SameSeriesService {
             }
         }
 
-        return Optional.of(new SameSeriesResponse(
+        SameSeriesResponse response = new SameSeriesResponse(
                 target.id(),
                 targetSeries,
                 yearWindow,
@@ -91,7 +128,25 @@ public class SameSeriesService {
                 high,
                 medium,
                 candidates
-        ));
+        );
+
+        long totalMs = performanceLogSupport.elapsedMillis(totalStart);
+        performanceLogSupport.logStep(
+                log,
+                "same-series vehicleId=" + vehicleId,
+                totalMs,
+                "loadTargetMs=" + loadTargetMs
+                        + ", poolQueryMs=" + poolQueryMs
+                        + ", scoreMs=" + scoreMs
+                        + ", sortMs=" + sortMs
+                        + ", poolSize=" + pool.size()
+                        + ", candidateCount=" + response.getCandidateCount()
+                        + ", high=" + response.getHighConfidenceCount()
+                        + ", medium=" + response.getMediumConfidenceCount()
+                        + ", indexedQuery=" + indexedQuery
+        );
+
+        return Optional.of(response);
     }
 
     private ScoreResult score(VehicleSeriesSnapshot target, VehicleSeriesSnapshot candidate, String targetSeries, String targetModelPrefix) {
@@ -239,6 +294,13 @@ public class SameSeriesService {
             return false;
         }
         return a.trim().equalsIgnoreCase(b.trim());
+    }
+
+    private static String normalizeQueryKey(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
     private record ScoreResult(int score, String confidenceLevel, List<String> reasons) {

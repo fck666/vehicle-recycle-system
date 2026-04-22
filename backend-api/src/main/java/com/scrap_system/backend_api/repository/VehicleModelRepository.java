@@ -83,6 +83,39 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
             """)
     Optional<VehicleSeriesSnapshotView> findSeriesSnapshotById(@Param("id") Long id);
 
+    @Query(value = """
+            select
+                v.id as id,
+                v.brand as brand,
+                v.model as model,
+                v.model_year as modelYear,
+                v.manufacturer_name as manufacturerName,
+                v.vehicle_type as vehicleType,
+                v.fuel_type as fuelType,
+                v.curb_weight as curbWeight,
+                v.wheelbase_mm as wheelbaseMm,
+                v.trademark as trademark,
+                v.product_no as productNo
+            from vehicle_model v
+            where v.id <> :targetId
+              and v.vehicle_type_ci = :vehicleTypeCi
+              and v.fuel_type_ci = :fuelTypeCi
+              and v.model_year between :minYear and :maxYear
+              and (
+                   :manufacturerNameCi is null
+                   or :manufacturerNameCi = ''
+                   or v.manufacturer_name_ci = :manufacturerNameCi
+              )
+            """, nativeQuery = true)
+    List<VehicleSeriesSnapshotView> findSameSeriesPoolSnapshotsIndexed(
+            @Param("targetId") Long targetId,
+            @Param("manufacturerNameCi") String manufacturerNameCi,
+            @Param("vehicleTypeCi") String vehicleTypeCi,
+            @Param("fuelTypeCi") String fuelTypeCi,
+            @Param("minYear") Integer minYear,
+            @Param("maxYear") Integer maxYear
+    );
+
     @Query("""
             select
                 v.id as id,
@@ -107,7 +140,7 @@ public interface VehicleModelRepository extends JpaRepository<VehicleModel, Long
                    or lower(coalesce(v.manufacturerName, '')) = lower(:manufacturerName)
               )
             """)
-    List<VehicleSeriesSnapshotView> findSameSeriesPoolSnapshots(
+    List<VehicleSeriesSnapshotView> findSameSeriesPoolSnapshotsFallback(
             @Param("targetId") Long targetId,
             @Param("manufacturerName") String manufacturerName,
             @Param("vehicleType") String vehicleType,

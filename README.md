@@ -1,3 +1,21 @@
+# vehicle-recycle-system
+
+## 开发环境要求
+
+### 后端 JDK
+
+- `backend-api` 现在强制要求使用 `Eclipse Temurin 17`
+- Maven 构建会校验：
+  - `java.version` 必须是 `17.x`
+  - `java.vendor` 必须是 `Eclipse Adoptium`
+- 当前如果继续使用 Oracle JDK 或 Oracle 发布的 OpenJDK，`./mvnw validate` 会失败
+
+详细说明见 [backend-api/docs/java-runtime.md](backend-api/docs/java-runtime.md)。
+
+### 第三方依赖说明
+
+仓库级第三方依赖说明草稿见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## 生产发版（数据库 + 后端 + 前端）
 
 以下命令基于当前目录结构与服务器路径：
@@ -56,9 +74,11 @@ scp ./target/backend-api-0.0.1-SNAPSHOT.jar root@39.105.26.34:/root/backend-prod
 ### 3) 上传数据库发布脚本（若服务器未准备）
 
 ```bash
+RELEASE_DIR=2026-04-21-api-performance-indexes
+
 ssh root@39.105.26.34 "mkdir -p /root/vehicle-recycle-system/backend-api/docs/prod-db-release"
 
-scp -r /Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope \
+scp -r /Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/${RELEASE_DIR} \
   root@39.105.26.34:/root/vehicle-recycle-system/backend-api/docs/prod-db-release/
 ```
 
@@ -67,8 +87,10 @@ scp -r /Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-rel
 **安全提示**：使用 `export` 临时注入密码，避免明文留痕。
 
 ```bash
+RELEASE_DIR=2026-04-21-api-performance-indexes
+
 ssh root@39.105.26.34
-cd /root/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope
+cd /root/vehicle-recycle-system/backend-api/docs/prod-db-release/${RELEASE_DIR}
 
 # 4.1 临时加载数据库密码到环境变量（执行完会自动清除）
 export $(grep DB_PASSWORD /etc/backend-api/backend-api.env | xargs)
@@ -120,8 +142,10 @@ ssh root@39.105.26.34 "sudo journalctl -u backend-api -n 120 --no-pager"
 # 7.1 先回滚后端/前端到上一版产物（按你的备份路径恢复）
 
 # 7.2 再执行数据库回滚
+RELEASE_DIR=2026-04-21-api-performance-indexes
+
 ssh root@39.105.26.34 '
-  cd /root/vehicle-recycle-system/backend-api/docs/prod-db-release/2026-03-09-material-template-scope &&
+  cd /root/vehicle-recycle-system/backend-api/docs/prod-db-release/'"${RELEASE_DIR}"' &&
   export $(grep DB_PASSWORD /etc/backend-api/backend-api.env | xargs) &&
   docker exec -i mysql-prod mysql -uroot -p"$DB_PASSWORD" scrap_system < rollback.sql &&
   unset DB_PASSWORD
@@ -131,6 +155,14 @@ ssh root@39.105.26.34 '
 ## 生产数据库变更标准流程
 
 后续所有生产数据库结构变更，建议统一按“预检查 -> 迁移 -> 发布 -> 验证 -> 可回滚”执行。
-标准流程文档与脚本模板见：[prod-db-release/README.md](file:///Users/kkkfcc/Desktop/vehicle-recycle-system/backend-api/docs/prod-db-release/README.md)
+标准流程文档与脚本模板见 [backend-api/docs/prod-db-release/README.md](backend-api/docs/prod-db-release/README.md)。
+
+当前这次接口性能相关的线上改表脚本位于：
+
+- `backend-api/docs/prod-db-release/2026-04-21-api-performance-indexes/README.md`
+- `backend-api/docs/prod-db-release/2026-04-21-api-performance-indexes/precheck.sql`
+- `backend-api/docs/prod-db-release/2026-04-21-api-performance-indexes/migrate.sql`
+- `backend-api/docs/prod-db-release/2026-04-21-api-performance-indexes/postcheck.sql`
+- `backend-api/docs/prod-db-release/2026-04-21-api-performance-indexes/rollback.sql`
 
 ## 生产环境变量与 OSS AccessKey 切换

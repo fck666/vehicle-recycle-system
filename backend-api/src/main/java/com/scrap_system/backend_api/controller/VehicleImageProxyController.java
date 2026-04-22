@@ -1,5 +1,6 @@
 package com.scrap_system.backend_api.controller;
 
+import com.scrap_system.backend_api.config.PerformanceLogSupport;
 import com.scrap_system.backend_api.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class VehicleImageProxyController {
     private static final String OSS_ALLOWED_HOST = "xhy-car-files.oss-cn-beijing.aliyuncs.com";
 
     private final FileStorageService fileStorageService;
+    private final PerformanceLogSupport performanceLogSupport;
 
     @GetMapping("/proxy")
     public ResponseEntity<byte[]> proxy(@RequestParam String source) {
@@ -37,6 +39,7 @@ public class VehicleImageProxyController {
 
     private ResponseEntity<byte[]> proxyInternal(String source) {
         try {
+            long totalStart = System.nanoTime();
             URI uri = URI.create(source);
             String host = uri.getHost();
             String scheme = uri.getScheme();
@@ -47,9 +50,13 @@ public class VehicleImageProxyController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
+            long signStart = System.nanoTime();
             String fetchUrl = isSignedUrl(uri)
                     ? source
                     : fileStorageService.generatePresignedUrl(source, 600);
+            long signMs = performanceLogSupport.elapsedMillis(signStart);
+
+            long fetchStart = System.nanoTime();
             HttpURLConnection connection = (HttpURLConnection) URI.create(fetchUrl).toURL().openConnection();
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(10000);
@@ -70,6 +77,17 @@ public class VehicleImageProxyController {
             try (InputStream in = connection.getInputStream()) {
                 bytes = in.readAllBytes();
             }
+            long fetchMs = performanceLogSupport.elapsedMillis(fetchStart);
+            long totalMs = performanceLogSupport.elapsedMillis(totalStart);
+            performanceLogSupport.logProxy(
+                    log,
+                    "vehicle-image-proxy host=" + host,
+                    totalMs,
+                    "signMs=" + signMs
+                            + ", fetchMs=" + fetchMs
+                            + ", signedSource=" + isSignedUrl(uri)
+                            + ", bytes=" + bytes.length
+            );
             return ResponseEntity.ok()
                     .header(HttpHeaders.CACHE_CONTROL, "public, max-age=300")
                     .contentType(MediaType.parseMediaType(contentType))

@@ -44,12 +44,17 @@ CREATE TABLE IF NOT EXISTS vehicle_model (
   spec_raw_json LONGTEXT,
   vehicle_type VARCHAR(32) NOT NULL,
   source_site VARCHAR(32),
+  vehicle_type_ci VARCHAR(32) GENERATED ALWAYS AS (LOWER(COALESCE(vehicle_type, ''))) STORED,
+  fuel_type_ci VARCHAR(32) GENERATED ALWAYS AS (LOWER(COALESCE(fuel_type, ''))) STORED,
+  manufacturer_name_ci VARCHAR(255) GENERATED ALWAYS AS (LOWER(COALESCE(manufacturer_name, ''))) STORED,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_vm_brand (brand),
   INDEX idx_vm_model (model),
   INDEX idx_vm_product_id (product_id),
   INDEX idx_vm_product_no (product_no),
   INDEX idx_vm_release_date (release_date),
+  INDEX idx_vm_same_series_ci_mfr (vehicle_type_ci, fuel_type_ci, manufacturer_name_ci, model_year, id),
+  INDEX idx_vm_same_series_ci (vehicle_type_ci, fuel_type_ci, model_year, id),
   FULLTEXT INDEX ft_idx_vm_search (brand, model, product_id, product_no) WITH PARSER ngram
 );
 
@@ -93,7 +98,8 @@ CREATE TABLE IF NOT EXISTS material_price (
   price_category VARCHAR(20) NOT NULL DEFAULT 'MARKET' COMMENT 'MARKET or RECYCLE',
   update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_material_price_type_date_category (type, effective_date, price_category),
-  INDEX idx_material_price_type_date (type, effective_date)
+  INDEX idx_material_price_type_date (type, effective_date),
+  INDEX idx_material_price_category_type_date (price_category, type, effective_date)
 );
 
 CREATE TABLE IF NOT EXISTS material_source_config (
@@ -119,7 +125,8 @@ CREATE TABLE IF NOT EXISTS valuation_record (
   copper_value DECIMAL(12,2) NOT NULL,
   battery_value DECIMAL(12,2) NOT NULL,
   details_json LONGTEXT,
-  created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_valuation_record_vehicle_time (vehicle_id, created_time)
 );
 
 CREATE TABLE IF NOT EXISTS vehicle_image (
@@ -335,3 +342,10 @@ INSERT IGNORE INTO component_dict (name, sort_order) VALUES ('油箱', 230);
 
 -- 添加全文索引以支持高效的模糊查询
 ALTER TABLE vehicle_model ADD FULLTEXT INDEX ft_idx_vm_search (brand, model, product_id, product_no) WITH PARSER ngram;
+ALTER TABLE vehicle_model ADD COLUMN vehicle_type_ci VARCHAR(32) GENERATED ALWAYS AS (LOWER(COALESCE(vehicle_type, ''))) STORED;
+ALTER TABLE vehicle_model ADD COLUMN fuel_type_ci VARCHAR(32) GENERATED ALWAYS AS (LOWER(COALESCE(fuel_type, ''))) STORED;
+ALTER TABLE vehicle_model ADD COLUMN manufacturer_name_ci VARCHAR(255) GENERATED ALWAYS AS (LOWER(COALESCE(manufacturer_name, ''))) STORED;
+ALTER TABLE vehicle_model ADD INDEX idx_vm_same_series_ci_mfr (vehicle_type_ci, fuel_type_ci, manufacturer_name_ci, model_year, id);
+ALTER TABLE vehicle_model ADD INDEX idx_vm_same_series_ci (vehicle_type_ci, fuel_type_ci, model_year, id);
+ALTER TABLE material_price ADD INDEX idx_material_price_category_type_date (price_category, type, effective_date);
+ALTER TABLE valuation_record ADD INDEX idx_valuation_record_vehicle_time (vehicle_id, created_time);

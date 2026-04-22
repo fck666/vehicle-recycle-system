@@ -1,5 +1,6 @@
 package com.scrap_system.backend_api.controller;
 
+import com.scrap_system.backend_api.config.PerformanceLogSupport;
 import com.scrap_system.backend_api.dto.SameSeriesResponse;
 import com.scrap_system.backend_api.model.VehicleModel;
 import com.scrap_system.backend_api.repository.VehicleModelRepository;
@@ -30,6 +31,7 @@ public class VehicleController {
     private final VehicleModelRepository vehicleModelRepository;
     private final FileStorageService fileStorageService;
     private final SameSeriesService sameSeriesService;
+    private final PerformanceLogSupport performanceLogSupport;
 
     @GetMapping
     public ResponseEntity<Page<VehicleModel>> search(
@@ -87,12 +89,31 @@ public class VehicleController {
             @PathVariable Long id,
             @RequestParam(defaultValue = "true") boolean signMedia
     ) {
+        long totalStart = System.nanoTime();
         log.debug("Vehicle detail request, vehicleId={}, signMedia={}, storageService={}",
                 id, signMedia, fileStorageService.getClass().getSimpleName());
-        return vehicleModelRepository.findById(id)
-                .map(vehicle -> signMedia ? attachPresignedUrls(vehicle) : vehicle)
-                .map(ResponseEntity::ok)
+        long loadVehicleStart = System.nanoTime();
+        ResponseEntity<VehicleModel> response = vehicleModelRepository.findById(id)
+                .map(vehicle -> {
+                    long loadVehicleMs = performanceLogSupport.elapsedMillis(loadVehicleStart);
+                    long signStart = System.nanoTime();
+                    MediaAttachStats stats = signMedia ? attachPresignedUrls(vehicle) : MediaAttachStats.empty();
+                    long signMs = performanceLogSupport.elapsedMillis(signStart);
+                    long totalMs = performanceLogSupport.elapsedMillis(totalStart);
+                    performanceLogSupport.logStep(
+                            log,
+                            "vehicle-detail vehicleId=" + id,
+                            totalMs,
+                            "loadVehicleMs=" + loadVehicleMs
+                                    + ", signMediaMs=" + signMs
+                                    + ", signMedia=" + signMedia
+                                    + ", imageCount=" + stats.imageCount()
+                                    + ", documentCount=" + stats.documentCount()
+                    );
+                    return ResponseEntity.ok(vehicle);
+                })
                 .orElseGet(() -> ResponseEntity.notFound().build());
+        return response;
     }
 
     @GetMapping("/{id}/same-series")
@@ -108,21 +129,31 @@ public class VehicleController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private VehicleModel attachPresignedUrls(VehicleModel vehicle) {
+    private MediaAttachStats attachPresignedUrls(VehicleModel vehicle) {
+        int imageCount = 0;
         if (vehicle.getImages() != null) {
             vehicle.getImages().forEach(image -> {
                 if (image.getImageUrl() != null && !image.getImageUrl().trim().isEmpty()) {
                     image.setImageUrl(fileStorageService.generatePresignedUrl(image.getImageUrl(), 3600));
                 }
             });
+            imageCount = vehicle.getImages().size();
         }
+        int documentCount = 0;
         if (vehicle.getDocuments() != null) {
             vehicle.getDocuments().forEach(doc -> {
                 if (doc.getDocUrl() != null && !doc.getDocUrl().trim().isEmpty()) {
                     doc.setDocUrl(fileStorageService.generatePresignedUrl(doc.getDocUrl(), 3600));
                 }
             });
+            documentCount = vehicle.getDocuments().size();
         }
-        return vehicle;
+        return new MediaAttachStats(imageCount, documentCount);
+    }
+
+    private record MediaAttachStats(int imageCount, int documentCount) {
+        private static MediaAttachStats empty() {
+            return new MediaAttachStats(0, 0);
+        }
     }
 }
