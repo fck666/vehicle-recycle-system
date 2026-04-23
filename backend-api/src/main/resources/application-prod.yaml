@@ -60,9 +60,16 @@ logging:
     com.scrap_system: INFO
   file:
     name: logs/app.log
-    max-history: 30
-    max-size: 100MB
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 14
+      total-size-cap: 500MB
+      clean-history-on-start: true
 
 app:
+  security:
+    content-check:
+      enabled: ${APP_CONTENT_SECURITY_ENABLED:true}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,https://xhyscrapcar.com,https://www.xhyscrapcar.com}

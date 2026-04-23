@@ -1,9 +1,10 @@
 package com.scrap_system.backend_api.controller;
 
+import com.scrap_system.backend_api.exception.ContentSecurityException;
 import com.scrap_system.backend_api.model.VehicleDismantleRecord;
 import com.scrap_system.backend_api.repository.VehicleDismantleRecordRepository;
 import com.scrap_system.backend_api.repository.UserAccountRepository;
-import com.scrap_system.backend_api.security.JwtTokenService;
+import com.scrap_system.backend_api.service.MiniProgramContentSecurityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -19,6 +20,7 @@ public class AdminVehicleDismantleController {
 
     private final VehicleDismantleRecordRepository dismantleRecordRepository;
     private final UserAccountRepository userAccountRepository;
+    private final MiniProgramContentSecurityService contentSecurityService;
 
     @GetMapping("/vehicle/{vehicleId}")
     public ResponseEntity<List<VehicleDismantleRecord>> listByVehicle(@PathVariable Long vehicleId) {
@@ -33,11 +35,17 @@ public class AdminVehicleDismantleController {
     }
 
     @PostMapping
-    public ResponseEntity<VehicleDismantleRecord> create(@RequestBody VehicleDismantleRecord record) {
+    public ResponseEntity<?> create(@RequestBody VehicleDismantleRecord record) {
         if (record.getVehicleId() == null) {
             return ResponseEntity.badRequest().build();
         }
-        
+
+        try {
+            contentSecurityService.validateDismantleRecord(record);
+        } catch (ContentSecurityException ex) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", ex.getMessage()));
+        }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof Long) {
             Long userId = (Long) authentication.getPrincipal();
@@ -49,8 +57,14 @@ public class AdminVehicleDismantleController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<VehicleDismantleRecord> update(@PathVariable Long id, @RequestBody VehicleDismantleRecord record) {
+    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody VehicleDismantleRecord record) {
         return dismantleRecordRepository.findById(id).map(existing -> {
+            try {
+                contentSecurityService.validateDismantleRecord(record);
+            } catch (ContentSecurityException ex) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("message", ex.getMessage()));
+            }
+
             existing.setSteelWeight(record.getSteelWeight());
             existing.setAluminumWeight(record.getAluminumWeight());
             existing.setCopperWeight(record.getCopperWeight());

@@ -7,6 +7,7 @@ import com.scrap_system.backend_api.dto.AuthMeResponse;
 import com.scrap_system.backend_api.dto.AuthPhoneLoginRequest;
 import com.scrap_system.backend_api.dto.AuthWxLoginRequest;
 import com.scrap_system.backend_api.dto.UpdateUsernameRequest;
+import com.scrap_system.backend_api.exception.ContentSecurityException;
 import com.scrap_system.backend_api.security.JwtTokenService;
 import com.scrap_system.backend_api.service.AuthService;
 import com.scrap_system.backend_api.service.SessionService;
@@ -57,7 +58,7 @@ public class AuthController {
         try {
             authService.updateUsername(userId, request.getUsername());
             return ResponseEntity.ok().build();
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | ContentSecurityException e) {
             return ResponseEntity.badRequest().body(java.util.Map.of("message", e.getMessage()));
         }
     }

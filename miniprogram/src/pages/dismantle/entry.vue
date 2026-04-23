@@ -409,6 +409,7 @@ const handleSubmit = () => {
   request({
     url,
     method,
+    silent: true,
     data: data
   }).then(() => {
     uni.showToast({ title: '提交成功' });
@@ -416,7 +417,8 @@ const handleSubmit = () => {
       uni.navigateBack();
     }, 1500);
   }).catch(err => {
-    uni.showToast({ title: '提交失败: ' + (err.message || '权限不足'), icon: 'none' });
+    const message = err?.data?.message || '提交失败，请重试';
+    uni.showToast({ title: message, icon: 'none' });
   }).finally(() => {
     uni.hideLoading();
   });

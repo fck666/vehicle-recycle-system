@@ -107,6 +107,7 @@ export default {
       request({
         url: '/auth/me/username',
         method: 'PUT',
+        silent: true,
         data: { username: nextName }
       }).then(() => {
         this.username = nextName
@@ -114,8 +115,9 @@ export default {
         uni.setStorageSync('username', nextName)
         this.showEditModal = false
         uni.showToast({ title: '修改成功' })
-      }).catch(() => {
-        uni.showToast({ title: '修改失败，可能用户名已存在', icon: 'none' })
+      }).catch((err) => {
+        const message = err?.data?.message || '修改失败，请重试'
+        uni.showToast({ title: message, icon: 'none' })
       }).finally(() => {
         uni.hideLoading()
       })

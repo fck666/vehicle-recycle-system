@@ -23,6 +23,8 @@ spring:
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DB:0}
       timeout: 5s
+      repositories:
+        enabled: false
   sql:
     init:
       mode: always # 始终尝试初始化，具体脚本由 profile 决定是否覆盖
@@ -32,6 +34,9 @@ server:
   port: 8090
 
 app:
+  session:
+    redis:
+      enabled: ${APP_SESSION_REDIS_ENABLED:false}
   performance:
     enabled: true
     always-log: false
@@ -39,6 +44,8 @@ app:
     step-warn-threshold-ms: 300
     proxy-warn-threshold-ms: 500
   security:
+    content-check:
+      enabled: ${APP_CONTENT_SECURITY_ENABLED:false}
     jwt:
       secret: ${JWT_SECRET:r5l0h4jdVSUTwC6AHU9vUiQ8xWOi80I69we3x2wWxHjdD3ZbNYaEfGWECjD4ebKlbgJr-OXAwhltfxrNbqIWyw}
       ttl-seconds: 259200

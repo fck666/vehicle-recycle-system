@@ -9,6 +9,7 @@
   - `java.version` 必须是 `17.x`
   - `java.vendor` 必须是 `Eclipse Adoptium`
 - 当前如果继续使用 Oracle JDK 或 Oracle 发布的 OpenJDK，`./mvnw validate` 会失败
+- 生产环境的 Redis 会话缓存默认关闭；只有显式设置 `APP_SESSION_REDIS_ENABLED=true` 时才会启用
 
 详细说明见 [backend-api/docs/java-runtime.md](backend-api/docs/java-runtime.md)。
 

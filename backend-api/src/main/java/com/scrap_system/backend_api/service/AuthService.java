@@ -31,6 +31,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final SessionService sessionService;
+    private final MiniProgramContentSecurityService contentSecurityService;
     private final WxMaService wxMaService;
 
     @Value("${app.security.wx.dev-accept-openid:false}")
@@ -83,7 +84,8 @@ public class AuthService {
         if (existing.isPresent() && !existing.get().getId().equals(userId)) {
             throw new IllegalArgumentException("username already exists");
         }
-        
+
+        contentSecurityService.validateUsername(normalizedUsername);
         u.setUsername(normalizedUsername);
         userAccountRepository.save(u);
     }

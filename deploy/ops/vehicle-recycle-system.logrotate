@@ -3,9 +3,8 @@
 /var/log/kern.log
 {
     su root adm
-    daily
-    rotate 7
-    maxsize 100M
+    rotate 14
+    size 50M
     missingok
     notifempty
     compress
@@ -21,9 +20,8 @@
 /var/log/nginx/*.log
 {
     su root adm
-    daily
     rotate 14
-    maxsize 100M
+    size 50M
     missingok
     notifempty
     compress
@@ -38,9 +36,8 @@
 /root/vehicle-recycle-system/backend-api/logs/*.log
 {
     su root root
-    daily
     rotate 14
-    maxsize 100M
+    size 50M
     missingok
     notifempty
     compress
